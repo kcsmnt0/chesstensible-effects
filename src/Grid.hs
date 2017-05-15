@@ -1,11 +1,9 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, RankNTypes #-}
-
 module Grid where
 
-type Bounds = (Int,Int)
-type Index = (Int,Int) -- increasing right and down
+type Bounds = (Int,Int) -- 0-indexed, exclusive
+type Index = (Int,Int)  -- increasing right and down
 
-class Grid a g | g -> a where -- there might be no point in parameterizing this over a
+class Grid a g | g -> a where -- todo: there might be no point in parameterizing this over a
   empty :: Bounds -> a -> g
   size :: g -> Bounds
   (!) :: g -> Index -> a
@@ -18,7 +16,7 @@ within :: Grid a g => Index -> g -> Bool
 i `within` g = inBounds (size g) i
 
 indices :: Grid a g => g -> [Index]
-indices g = let (w,h) = size g in [(x,y) | x <- [0..w], y <- [0..h]]
+indices g = let (w,h) = size g in [(x,y) | x <- [0..w-1], y <- [0..h-1]]
 
 elems :: Grid a g => g -> [a]
 elems g = map (g!) $ indices g

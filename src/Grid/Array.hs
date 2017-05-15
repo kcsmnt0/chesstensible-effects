@@ -1,10 +1,7 @@
-{-# LANGUAGE FlexibleInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
-
 module Grid.Array where
 
 import Chess
-import Data.Array hiding (index)
-import qualified Data.Array as Array
+import Data.Array as Array
 import Grid
 
 instance Grid a (Array Index a) where

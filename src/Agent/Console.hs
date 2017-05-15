@@ -1,53 +1,61 @@
-{-# LANGUAGE DataKinds, ExistentialQuantification, UndecidableInstances, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, TypeApplications, KindSignatures, PolyKinds, ScopedTypeVariables, ViewPatterns #-}
+{-# language UndecidableInstances #-}
 
 module Agent.Console where
 
 import Chess
 import Control.Monad.Freer
+import Control.Monad.Freer.Console
 import Control.Monad.Freer.State
-import Data.Char
-import Data.Proxy
-import Game
 import Grid
 import Text.Read (readMaybe)
 
-data ConsoleAgentState (p :: Player) = forall b. Board b => ConsoleAgentState { consoleAgentState :: b }
+-- In order to avoid implicitly sharing state between two instances of the same agent competing against each other,
+-- the state type is parameterized over which player it belongs to. I don't think this is actually necessary for a
+-- console agent, since they each just store the board and they should always agree on that anyway, but this makes
+-- for a digestible example of the pattern in more complex agents that need to maintain private state in order to
+-- ensure fair competition.
+newtype AgentState (p :: Player) b = AgentState { agentState :: b }
 
--- just a hacky way to get a partially-appliable class synonym
-class (Member (State (ConsoleAgentState p)) e, Member IO e) => ConsoleAgentEffects p e
-instance (Member (State (ConsoleAgentState p)) e, Member IO e) => ConsoleAgentEffects p e
+-- This is just a hacky way to get a partially-appliable constraint synonym: "AgentEffects p b" is a constraint over
+-- a list of effects that requires it to contain a state of some board type b for player p and permission to read and
+-- write to a console. (This seems to be a known pain point for type-level trickery in Haskell - type synonyms and type
+-- families can't be partially applied, and you can't do a newtype over a constraint. I found this somewhere on
+-- StackOverflow a while ago and haven't been able to Google it, so I don't have an exact source, but there might be
+-- a less ugly way to go about it.)
+class (Board b, Member (State (AgentState p b)) e, Member Console e) => AgentEffects p b e
+instance (Board b, Member (State (AgentState p b)) e, Member Console e) => AgentEffects p b e
 
-initialConsoleAgentState :: forall b p. Board b => Proxy b -> ConsoleAgentState p
-initialConsoleAgentState (Proxy :: Proxy b) = ConsoleAgentState (initialBoard :: b)
+initialAgentState :: forall b p. Board b => AgentState p b
+initialAgentState = AgentState @_ @b initialBoard
 
-readColumn :: Char -> Maybe Int
-readColumn c = if 'a' <= c && c <= 'e' then Just (ord c - ord 'a') else Nothing
+consoleReadMove :: String -> Maybe MoveOutcome
+consoleReadMove "give up" = Just Lose
+consoleReadMove s = Move <$> readMove s
 
-readRow :: Char -> Maybe Int
-readRow c = do i <- readMaybe (c:""); if 0 <= i && i <= 5 then Just i else Nothing
-
-readMove :: String -> Maybe Turn
-readMove "give up" = Just Lose
-readMove [readColumn -> Just x, readRow -> Just y, readColumn -> Just x', readRow -> Just y'] = Just $ Move ((x,y), (x',y'))
-readMove _ = Nothing
-
-consoleAct :: ConsoleAgentEffects p e => PlayerSing p -> Eff e Turn
-consoleAct (p :: PlayerSing p) = do
-  ConsoleAgentState b :: ConsoleAgentState p <- get
-  send $ print p
-  send $ putStrLn $ showBoard b
-  m <- send getLine
-  case readMove m of
-    Nothing -> send (putStrLn "please take this seriously") >> consoleAct p
+-- The PlayerSing argument is because there needs to be something to case over when printing the player, and I'm not
+-- sure how to turn a lifted type back into a value - I think the singletons library handles this stuff but I haven't
+-- gotten around to looking into that yet.
+consoleAct :: forall b p effs. AgentEffects p b effs => PlayerSing p -> Eff effs MoveOutcome
+consoleAct p = do
+  AgentState b :: AgentState p b <- get
+  consoleWrite $ show p
+  consoleWrite $ showBoard b
+  m <- consoleRead
+  case consoleReadMove m of
+    Nothing -> consoleWrite "couldn't parse your move" >> consoleAct @b p
     Just Lose -> return Lose
-    Just (Move (i, j)) -> do
-      case maybeMove b i j of
-        -- todo: i'm not using the output of maybeMove? this is just legalMove :: etc. -> Bool
-        Just m -> put (ConsoleAgentState @p (makeMove i j b)) >> return (Move (i, j))
-        Nothing -> send (putStrLn "that's not allowed") >> consoleAct p
+    Just (Win m) -> error "no you didn't" -- unreachable case (consoleReadMove never returns Win)
+    Just (Move m) -> do
+      case maybeMove b m of
+        Nothing -> consoleWrite "illegal move" >> consoleAct @b p
+        Just (MoveRecord r _) -> do
+          let b' = makeMove m b
+          put (AgentState @p b')
+          consoleWrite $ showBoard b'
+          return $ if r == Capture King then Win m else Move m
 
-consoleObserve :: ConsoleAgentEffects p e => PlayerSing p -> (Index, Index) -> Eff e ()
-consoleObserve (p :: PlayerSing p) (i, j) = modify (\(ConsoleAgentState b) -> ConsoleAgentState @p (makeMove i j b))
+consoleObserve :: forall b p e. AgentEffects p b e => PlayerSing p -> Move -> Eff e ()
+consoleObserve p m = modify (AgentState @p @b . makeMove m . agentState)
 
-consoleAgent :: PlayerSing p -> Agent (ConsoleAgentEffects p)
-consoleAgent p = Agent (consoleAct p) (consoleObserve p)
+agent :: forall b p. Board b => PlayerSing p -> Agent (AgentEffects p b)
+agent p = Agent (consoleAct @b p) (consoleObserve @b p)

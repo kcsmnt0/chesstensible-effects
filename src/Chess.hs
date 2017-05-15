@@ -1,30 +1,54 @@
-{-# LANGUAGE DataKinds, GADTs, FlexibleContexts, ConstraintKinds, DeriveFunctor, TypeFamilies, TupleSections #-}
-
 module Chess where
 
-import Control.Monad
+import Control.Monad.Freer
 import Data.Char
 import Data.Maybe
 import Grid
+import Text.Read
 
-data Player = Black | White deriving Eq -- black starts at top
-data Silhouette = Pawn | Knight | Bishop | Rook | Queen | King deriving Eq
-data Piece = Piece { player :: Player, silhouette :: Silhouette } deriving Eq
+data Player = Black | White deriving Eq -- Black starts at top.
+data Shape = Pawn | Knight | Bishop | Rook | Queen | King deriving Eq
+data Piece = Piece { owner :: Player, shape :: Shape } deriving Eq
+
 type Board = Grid (Maybe Piece)
-data Permission = Occupy | Take | Whatever deriving (Show, Eq)
-data Result = Capture Silhouette | Migrate deriving (Show, Eq)
-data Trajectory = Offset (Int,Int) | Ray (Int,Int) deriving (Show, Eq) -- how to get to some indices that a piece can potentially move to
-data PotentialMove = PotentialMove Permission Trajectory deriving (Show, Eq)
-data ActualMove = ActualMove Result Index deriving (Show, Eq)
 
-data PlayerSing (p :: Player) where
+-- Each piece type has a mask associated with it that indicates all the spaces it could potentially move to if the
+-- conditions were right. A Condition represents which condition needs to hold.
+data Condition = Empty | Occupied | Whatever deriving (Show, Eq) -- todo! Promote 
+
+-- A trajectory is just some subset of the spaces a piece can reach: it can either jump to some offset, or slide across
+-- some ray until it hits the edge of the board or another piece.
+data Trajectory = Offset (Int,Int) | Ray (Int,Int) deriving (Show, Eq)
+
+-- A PotentialMove is a set of spaces that can be moved to under some condition.
+data PotentialMove = PotentialMove { condition :: Condition, trajectory :: Trajectory } deriving (Show, Eq)
+
+type Move = (Index, Index)
+
+-- "Migrate" just means "did not capture". (Is there a chess word for that?)
+data MoveResult = Capture Shape | Migrate deriving (Show, Eq)
+
+data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
+
+data MoveOutcome = Win Move | Move Move | Lose deriving (Show, Eq)
+
+-- An Agent is parameterized over a constraint that applies to a list of effects, requiring the presence of the effects
+-- that the agent needs to run without restricting which other effects can be in context. Each agent maintains its own
+-- state within the effectful context that it runs in, so there's no shared board state to pass around.
+-- "act" prompts the agent to take its turn and return the result.
+-- "observe" tells the agent the result of its opponent's move so that it can react effectfully.
+data Agent c = Agent -- todo: can this be a typeclass, actually?
+  { act     :: forall e. c e => Eff e MoveOutcome
+  , observe :: forall e. c e => Move -> Eff e ()
+  }
+
+-- Some of my type-level shenanigans depend on Player values lifted to types, but I need them at the term level
+-- sometimes too, so "PlayerSing p" is a singleton type that provides a type-level Player and can be cased over.
+data PlayerSing (p :: Player) where -- todo: the singletons library takes care of all this stuff
   WHITE :: PlayerSing White
   BLACK :: PlayerSing Black
 
-type family Opponent (p :: Player) where
-  Opponent White = Black
-  Opponent Black = White
-
+-- todo: dedicated module for IMCS-format reading and showing
 instance Show Player where
   show White = "W"
   show Black = "B"
@@ -33,7 +57,7 @@ instance Show (PlayerSing p) where
   show WHITE = show White
   show BLACK = show Black
 
-instance Show Silhouette where
+instance Show Shape where
   show Pawn = "P"
   show Knight = "N"
   show Bishop = "B"
@@ -45,11 +69,46 @@ instance Show Piece where
   show (Piece White s) = show s
   show (Piece Black s) = map toLower $ show s
 
--- todo: HEY THIS IS BACKWARDS FROM THE SERVER WAY
+readPlayer :: Char -> Maybe Player
+readPlayer 'W' = Just White
+readPlayer 'B' = Just Black
+readPlayer _ = Nothing
+
+readColumn :: Char -> Maybe Int
+readColumn c = if 'a' <= c && c <= 'e' then Just (ord c - ord 'a') else Nothing
+
+-- The internal board representation is mirrored across the horizontal axis, so the row indices are mirrored here.
+readRow :: Char -> Maybe Int
+readRow c = do i <- readMaybe (c:""); if 1 <= i && i <= 6 then Just (6-i) else Nothing
+
+readMove :: String -> Maybe Move
+readMove [readColumn -> Just x, readRow -> Just y, '-', readColumn -> Just x', readRow -> Just y'] = Just ((x,y), (x',y'))
+readMove _ = Nothing
+
+showColumn :: Int -> Char
+showColumn = chr . (ord 'a' +)
+
+showRow :: Int -> Char
+showRow = head . show . (6 -)
+
+showMove :: Move -> String
+showMove ((x,y), (x',y')) = [showColumn x, showRow y, '-', showColumn x', showRow y']
+
 showBoard :: Board b => b -> String
-showBoard b = unlines $ header ++ [show y ++ "| " ++ concat [maybe "." show (b!(x,y)) | x <- [0..w-1]] | y <- [0..h-1]]
+showBoard b = unlines $ concat
+  [ map (("  " ++) . flip map [0..w-1]) [chr . (ord 'a' +), const ' ']
+  , [ concat
+      [ show (h-y)
+      , " "
+      , concat [maybe "." show (b!(x,y)) | x <- [0..w-1]]
+      , " "
+      , show (h-y)
+      ]
+    | y <- [0..h-1]
+    ]
+  , map (("  " ++) . flip map [0..w-1]) [const ' ', chr . (ord 'a' +)]
+  ]
   where
-    header = map (("   " ++) . flip map [0..w-1]) [chr . (ord 'a' +), const '_']
     (w,h) = size b
 
 playerSing :: PlayerSing p -> Player
@@ -60,9 +119,34 @@ opponent :: Player -> Player
 opponent Black = White
 opponent White = Black
 
-won :: Board b => Player -> b -> Bool
-won p = not . any (maybe False ((p ==) . player)) . elems
+type family Opponent (p :: Player) where
+  Opponent White = Black
+  Opponent Black = White
 
+opponentSing :: PlayerSing p -> PlayerSing (Opponent p)
+opponentSing WHITE = BLACK
+opponentSing BLACK = WHITE
+
+pieces :: Board b => Player -> b -> [(Index, Shape)]
+pieces p b = [(i, shape x) | (i, Just x) <- entries b, owner x == p]
+
+-- from Bart's tutorial
+pieceScore :: Shape -> Int
+pieceScore Pawn = 100
+pieceScore Bishop = 300
+pieceScore Knight = 300
+pieceScore Rook = 500
+pieceScore Queen = 900
+pieceScore King = 0
+
+boardScore :: Board b => Player -> b -> Int
+boardScore p b = sum (map (pieceScore . snd) (pieces p b)) - sum (map (pieceScore . snd) (pieces (opponent p) b))
+
+-- The board is won if the opponent's king is gone.
+won :: Board b => Player -> b -> Bool
+won p = not . any (maybe False (\(Piece p' s) -> s == King && p' == opponent p)) . elems
+
+-- The board is lost if it's won for the opponent. 
 lost :: Board b => Player -> b -> Bool
 lost = won . opponent
 
@@ -82,55 +166,94 @@ down = Ray (0,1)
 downRight :: Trajectory
 downRight = Ray (1,1)
 
+-- The rook and queen can move along the horizontal and vertical axes.
 axes :: [Trajectory]
 axes = rotations down
 
+-- The biship and queen can move along the axes rotated by 45 degrees.
 diagonals :: [Trajectory]
 diagonals = rotations downRight
 
-at :: Permission -> Index -> PotentialMove
 at p = PotentialMove p . Offset
 
+-- The union of all of the sets of potential moves that it can make.
 mask :: Piece -> [PotentialMove]
-mask (Piece Black Pawn) = [Occupy `at` (0, 1), Take `at` (-1, 1), Take `at` (1, 1)]
-mask (Piece White Pawn) = [Occupy `at` (0,-1), Take `at` (-1,-1), Take `at` (1,-1)]
-mask (Piece _ Knight) = map (Whatever `at`) [(2,1), (2,-1), (-2,1), (-2,-1), (1,2), (2,-1), (-1,2), (-1,-2)]
-mask (Piece _ Bishop) = map (Occupy `at`) [(0,1), (0,-1), (1,0), (-1,0)] ++ map (PotentialMove Whatever) diagonals
+mask (Piece Black Pawn) = [Empty `at` (0, 1), Occupied `at` (-1, 1), Occupied `at` (1, 1)]
+mask (Piece White Pawn) = [Empty `at` (0,-1), Occupied `at` (-1,-1), Occupied `at` (1,-1)]
+mask (Piece _ Knight) = map (Whatever `at`) [(2,1), (2,-1), (-2,1), (-2,-1), (1,2), (1,-2), (-1,2), (-1,-2)]
+mask (Piece _ Bishop) = map (Empty `at`) [(0,1), (0,-1), (1,0), (-1,0)] ++ map (PotentialMove Whatever) diagonals
 mask (Piece _ Rook) = map (PotentialMove Whatever) axes
 mask (Piece _ Queen) = map (PotentialMove Whatever) (axes ++ diagonals)
 mask (Piece _ King) = map (Whatever `at`) [(1,-1), (1,0), (1,1), (0,-1), (0,1), (-1,-1), (-1,0), (-1,1)]
 
-reachable :: Bounds -> Index -> Trajectory -> [Index]
-reachable b i (Offset j) = let i' = shift i j in [i' | inBounds b i']
-reachable b i (Ray j) = takeWhile (inBounds b) $ tail $ iterate (shift j) i
+-- todo: put this somewhere
+takeWhile1 :: (a -> Bool) -> [a] -> [a]
+takeWhile1 p [] = []
+takeWhile1 p (x:xs) = x : if p x then takeWhile1 p xs else []
 
-result :: Player -> Permission -> Maybe Piece -> Maybe Result
-result c Occupy Nothing = Just Migrate
-result c Take (Just (Piece c' s)) | (c' == opponent c) = Just $ Capture s
-result c Whatever Nothing = Just Migrate
-result c Whatever (Just (Piece c' s)) | (c' == opponent c) = Just $ Capture s
-result _ _ _ = Nothing
+-- The cells along a trajectory that a piece can legally reach on the given board.
+reachable :: Board b => b -> Index -> Trajectory -> [Index]
+reachable b i (Offset j) = let i' = shift i j in [i' | i' `within` b]
+reachable b i (Ray j) = takeWhile1 (isNothing . (b!)) $ takeWhile (`within` b) $ tail $ iterate (shift j) i
 
-moves :: Board b => b -> Piece -> Index -> [ActualMove]
-moves b p i = do
-  PotentialMove pm t <- mask p
-  i' <- reachable (size b) i t
-  e <- maybeToList $ result (player p) pm (b!i')
-  return $ ActualMove e i'
+moveResult :: Player -> Condition -> Maybe Piece -> Maybe MoveResult
+moveResult c Empty Nothing = Just Migrate
+moveResult c Occupied (Just (Piece c' s)) | (c' == opponent c) = Just $ Capture s
+moveResult c Whatever Nothing = Just Migrate
+moveResult c Whatever (Just (Piece c' s)) | (c' == opponent c) = Just $ Capture s
+moveResult _ _ _ = Nothing
 
-maybeMove :: Board b => b -> Index -> Index -> Maybe ActualMove
-maybeMove b i j = do
+-- All of the legal moves for a piece at a given index (assumed without verification to be there).
+pieceMoves :: Board b => b -> Index -> Piece -> [MoveRecord]
+pieceMoves b i p = do
+  PotentialMove m t <- mask p
+  i' <- reachable b i t
+  e <- maybeToList $ moveResult (owner p) m (b!i')
+  return $ MoveRecord e (i, i')
+
+-- All the legal moves that the player can make.
+moves :: Board b => Player -> b -> [MoveRecord] -- todo: promote
+moves p b = [m | (i,s) <- pieces p b, m <- pieceMoves b i (Piece p s)]
+
+-- Update a board with the result of a move.
+makeMove :: Board b => Move -> b -> b
+makeMove (i, j) b = replace i Nothing (replace j (b!i) b)
+
+-- Take a pair of indices and return a strongly-typed move if they represent a legal movement on the board.
+maybeMove :: Board b => b -> Move -> Maybe MoveRecord
+maybeMove b (i, j) = do
   p <- b!i
   let p' = b!j
-  -- todo: this is pretty half-assed, it just sees if it can be found in the moves list
-  listToMaybe [m | m@(ActualMove e j') <- moves b p i, j == j', case e of Migrate -> isNothing p'; Capture _ -> isJust p']
+  -- todo: this is definitely more complicated than it needs to be
+  listToMaybe [m | m@(MoveRecord e (i, j')) <- pieceMoves b i p, j == j', case e of Migrate -> isNothing p'; Capture _ -> isJust p']
 
-makeMove :: Board b => Index -> Index -> b -> b
-makeMove i j b = replace i Nothing (replace j (b!i) b)
-
+-- The board position at the start of the game.
 initialBoard :: Board b => b
 initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6) Nothing)
   where
     positions = backRow Black 0 [0..4] ++ pawns Black 1 ++ backRow White 5 [4,3..0] ++ pawns White 4
     pawns p y = [((x,y), Piece p Pawn) | x <- [0..4]]
     backRow p y xs = [((x,y), Piece p s) | (x,s) <- zip xs [King, Queen, Bishop, Knight, Rook]]
+
+-- Play one white turn and one black turn, relaying the actions between the two agents. The constraint on the effects
+-- in scope is the union of the two agent constraints, so this essentially interlaves the two effectful coroutines
+-- that the agents represent into one effectful computation.
+tradeTurns :: (c effs, c' effs) => Agent c -> Agent c' -> Eff effs (Maybe Player)
+tradeTurns w b = do
+  m <- act w
+  case m of
+    Lose -> return $ Just Black
+    Win m' -> observe b m' >> return (Just White)
+    Move m' -> do
+      observe b m'
+      m'' <- act b
+      case m'' of
+        Lose -> return $ Just White
+        Win m''' -> observe w m''' >> return (Just Black)
+        Move m''' -> do
+          observe w m'''
+          return Nothing
+
+-- Run a game to completion.
+playGame :: (c e, c' e) => Agent c -> Agent c' -> Eff e Player -- todo! doesn't account for draw
+playGame w b = tradeTurns w b >>= maybe (playGame w b) return
