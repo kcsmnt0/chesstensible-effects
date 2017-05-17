@@ -31,21 +31,20 @@ negateRank PositiveInfinity = NegativeInfinity
 
 -- Negamax rank, depth d, for player p, of a board state readable from the effectful context.
 -- todo: is there any point to using the Reader effect instead of just having the board as an argument?
-rank :: forall b e. (Board b, Member (Reader b) e) => Int -> Player -> Eff e Rank
-rank d p = do
-  board :: b <- ask
+rank :: Board b => b -> Int -> Player -> Rank
+rank b d p =
   if d == 0 then
-    return $ Rank $ boardScore p board
-  else if lost p board then
-    return NegativeInfinity
+    Rank $ boardScore p b
+  else if lost p b then
+    NegativeInfinity
   else
-    case moves p board of
-      [] -> return NegativeInfinity -- running out of moves is a loss
-      ms -> fmap maximum $ runChoices $ do
-        MoveRecord e m <- choose ms
-        case e of
-          Capture King -> return PositiveInfinity
-          _ -> fmap negateRank $ local (makeMove @b m) $ rank @b (d-1) (opponent p)
+    case moves p b of
+      [] -> NegativeInfinity -- running out of moves is a loss
+      ms -> maximum $ do
+        MoveRecord e m <- ms
+        return $ case e of
+          Capture King -> PositiveInfinity
+          _ -> negateRank $ rank (makeMove m b) (d-1) (opponent p)
 
 negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e MoveOutcome
 negamaxAct d p = do
@@ -56,8 +55,7 @@ negamaxAct d p = do
       -- maximum of a bounded recursive depth-first search through states for each available move
       MoveRecord e m <- fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
         m@(MoveRecord e m') <- choose ms
-        r <- flip runReader (makeMove m' b) $ rank @b d $ opponent $ playerSing p
-        return (m, negateRank r) -- here's that minus sign!
+        return (m, negateRank (rank (makeMove m' b) d (opponent (playerSing p)))) -- here's that minus sign!
       modify $ AgentState @p @b . makeMove m . agentState
       return $ case e of
         Capture King -> Win m
