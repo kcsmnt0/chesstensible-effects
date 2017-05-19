@@ -2,7 +2,7 @@
 -- (i.e. abstract out the choice of agent for a polymorphic VsIMCSOpponent script)
 module Script.NegamaxVsIMCSOpponent where
 
-import Agent.Negamax as Negamax
+import Agent.AlphaBetaNegamax as Negamax
 import Agent.IMCSOpponent as IMCSOpponent
 import Chess
 import Control.Monad
@@ -20,20 +20,20 @@ import Text.Read
 
 import Debug.Trace
 
-clientAgent = Negamax.agent @ArrayBoard 4
+clientAgent = Negamax.agent @ArrayBoard 5
 serverAgent = IMCSOpponent.agent
 
 prompt :: Member IO effs => String -> Eff effs String
 prompt p = send (putStrLn (p ++ ": ")) >> send getLine
 
-runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs Player
+runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
 runGame p = flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
-  WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
-  BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)
+  WHITE -> playGame 40 (clientAgent WHITE) (serverAgent BLACK)
+  BLACK -> playGame 40 (serverAgent WHITE) (clientAgent BLACK)
 
 runNegamaxVsIMCSOpponentIO :: IO ()
 runNegamaxVsIMCSOpponentIO = do
-  result <- runM @IO $ runError @SocketError $ runError @IMCSError $ runSocketIO "imcs.svcs.cs.pdx.edu" "3589" $ do
+  result <- runM @IO $ runError @SocketError $ runError @IMCSError $ runSocketIO "imcs.svcs.cs.pdx.edu" "3589" $ runConsoleIO $ do
     socketRecv >>= ensureResponseCode 100
 
     user <- prompt "username"
@@ -42,7 +42,7 @@ runNegamaxVsIMCSOpponentIO = do
 
     Just g <- iterateWhile isNothing $ do
       games <- list
-      send $ putStrLn $ unlines $ zipWith (++) (map show [0..]) [show gid ++ ": " ++ name | GameOffer gid name <- games]
+      send $ putStrLn $ unlines $ zipWith (++) (map show [0..]) [show g ++ ": " ++ n ++ " " ++ show p | GameOffer g n p <- games]
       fmap readMaybe (send getLine) >>= \case
         Just i | 0 <= i && i < length games -> return $ Just (games !! i)
         _ -> return Nothing

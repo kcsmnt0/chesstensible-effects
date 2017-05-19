@@ -3,8 +3,8 @@ module Control.Monad.Freer.Choice where
 import Control.Monad
 import Control.Monad.Freer
 
--- Nondeterministic choice. (Basically just the list monad, but a little more convenient to use with Eff.)
-data Choice a = Choose [a]
+-- Nondeterministic choice. (Really just the list monad, but a little more convenient to use with Eff.)
+newtype Choice a = Choose [a]
 
 choose xs = send $ Choose xs
 
@@ -22,4 +22,4 @@ runChoices :: Eff (Choice : effs) a -> Eff effs [a]
 runChoices = handleRelay (pure . pure) handler
   where
     handler :: Choice a -> Arr effs a [b] -> Eff effs [b]
-    handler (Choose bs) k = join <$> mapM k bs -- todo: this actually works for any monad if i generalize mapM
+    handler (Choose bs) k = join <$> mapM k bs -- todo: i think this actually works for any monad (with minor tweaks)

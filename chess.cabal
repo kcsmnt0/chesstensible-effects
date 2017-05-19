@@ -8,16 +8,18 @@ executable chess
   hs-source-dirs:      src
   main-is:             Main.hs
   default-language:    Haskell2010
-  ghc-options:        -O2 -fwarn-incomplete-patterns
+  ghc-options:         -O2 -fwarn-incomplete-patterns
   extensions:          AllowAmbiguousTypes ApplicativeDo ConstraintKinds DataKinds FlexibleContexts FlexibleInstances
                        FunctionalDependencies GADTs KindSignatures LambdaCase MultiParamTypeClasses PolyKinds
                        RankNTypes ScopedTypeVariables TypeApplications TypeFamilies TypeOperators ViewPatterns
 
-  other-modules:       Agent.Console
+  other-modules:       Agent.AlphaBetaNegamax
+                     , Agent.Console
                      , Agent.IMCSOpponent
                      , Agent.Negamax
                      , Control.Monad.Freer.Choice
                      , Control.Monad.Freer.Console
+                     , Control.Monad.Freer.EarlyReturn
                      , Control.Monad.Freer.Socket
                      , Chess
                      , Grid
@@ -27,6 +29,7 @@ executable chess
                      , Script.ConsoleVsNegamax
                      , Script.IMCSConsole
                      , Script.NegamaxVsIMCSOpponent
+                     , Script.NegamaxVsNegamax
 
   build-depends:       base >= 4.7 && < 5
                      , monad-loops

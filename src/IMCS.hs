@@ -9,7 +9,7 @@ import Control.Monad.Freer.Socket
 import Chess
 
 type GameID = Int
-data GameOffer = GameOffer { gameID :: GameID, name :: String }
+data GameOffer = GameOffer { gameID :: GameID, name :: String, opponentPlayer :: Maybe Player }
 data IMCSError = IMCSError String
 
 ensureResponseCode :: Member (Exc IMCSError) effs => Int -> String -> Eff effs ()
@@ -33,7 +33,7 @@ list = do
   offersResp <- socketRecv
   runChoices $ choose (map words (lines offersResp)) >>= \case
     [gid, name, player, opponentTime, ownTime, opponentRank, "[offer]"] ->
-      return $ GameOffer (read gid) name
+      return $ GameOffer (read gid) name (readPlayer (head player))
     _ -> abandon
 
 me :: (Member (Exc IMCSError) effs, Member Socket effs) => String -> String -> Eff effs ()

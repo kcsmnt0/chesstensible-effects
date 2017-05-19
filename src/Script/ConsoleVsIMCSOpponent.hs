@@ -21,6 +21,11 @@ serverAgent = IMCSOpponent.agent
 prompt :: Member Console effs => String -> Eff effs String
 prompt p = consoleWrite (p ++ ": ") >> consoleRead
 
+runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
+runGame p = runConsoleIO $ flip evalState (Console.initialAgentState @ArrayBoard @p) $ case p of
+  WHITE -> playGame 40 (clientAgent WHITE) (serverAgent BLACK)
+  BLACK -> playGame 40 (serverAgent WHITE) (clientAgent BLACK)
+
 -- Connect to the server, let the user choose a game offer to accept, and run a local game between a console agent and
 -- one communicating with the IMCS server to represent the other player.
 runConsoleVsIMCSOpponentIO :: IO ()
@@ -34,7 +39,7 @@ runConsoleVsIMCSOpponentIO = do
 
     Just g <- iterateWhile isNothing $ do
       games <- list
-      send $ putStrLn $ unlines $ zipWith (++) (map show [0..]) [show g ++ ": " ++ n | GameOffer g n <- games]
+      send $ putStrLn $ unlines $ zipWith (++) (map show [0..]) [show g ++ ": " ++ n ++ " " ++ show p | GameOffer g n p <- games]
       fmap readMaybe (send getLine) >>= \case
         Just i | 0 <= i && i < length games -> return $ Just (games !! i)
         _ -> return Nothing
@@ -45,8 +50,3 @@ runConsoleVsIMCSOpponentIO = do
     Left SocketError -> "socket something error happens"
     Right (Left (IMCSError err)) -> "IMCS error: " ++ err
     Right (Right winner) -> show winner ++ " wins!"
-
-runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs Player
-runGame p = runConsoleIO $ flip evalState (Console.initialAgentState @ArrayBoard @p) $ case p of
-  WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
-  BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)

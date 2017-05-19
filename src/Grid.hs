@@ -9,17 +9,17 @@ class Grid a g | g -> a where -- todo: there might be no point in parameterizing
   (!) :: g -> Index -> a
   replace :: Index -> a -> g -> g
 
+  indices :: Grid a g => g -> [Index]
+  indices g = let (w,h) = size g in [(x,y) | x <- [0..w-1], y <- [0..h-1]]
+
+  elems :: Grid a g => g -> [a]
+  elems g = map (g!) $ indices g
+
+  assocs :: Grid a g => g -> [(Index,a)]
+  assocs g = map (\i -> (i, g!i)) $ indices g
+
 inBounds :: Bounds -> Index -> Bool
 inBounds (w,h) (x,y) = 0 <= x && x < w && 0 <= y && y < h
 
 within :: Grid a g => Index -> g -> Bool
 i `within` g = inBounds (size g) i
-
-indices :: Grid a g => g -> [Index]
-indices g = let (w,h) = size g in [(x,y) | x <- [0..w-1], y <- [0..h-1]]
-
-elems :: Grid a g => g -> [a]
-elems g = map (g!) $ indices g
-
-entries :: Grid a g => g -> [(Index,a)]
-entries g = map (\i -> (i, g!i)) $ indices g

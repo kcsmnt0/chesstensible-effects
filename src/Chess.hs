@@ -6,7 +6,7 @@ import Data.Maybe
 import Grid
 import Text.Read
 
-data Player = Black | White deriving Eq -- Black starts at top.
+data Player = Black | White deriving Eq
 data Shape = Pawn | Knight | Bishop | Rook | Queen | King deriving Eq
 data Piece = Piece { owner :: Player, shape :: Shape } deriving Eq
 
@@ -31,6 +31,8 @@ data MoveResult = Capture Shape | Migrate deriving (Show, Eq)
 data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
 
 data MoveOutcome = Win Move | Move Move | Lose deriving (Show, Eq)
+
+data GameOutcome = Won Player | Tied deriving (Show, Eq)
 
 -- An Agent is parameterized over a constraint that applies to a list of effects, requiring the presence of the effects
 -- that the agent needs to run without restricting which other effects can be in context. Each agent maintains its own
@@ -68,6 +70,15 @@ instance Show Shape where
 instance Show Piece where
   show (Piece White s) = show s
   show (Piece Black s) = map toLower $ show s
+
+-- from Dr. Massey's tutorial
+pieceScore :: Shape -> Int
+pieceScore Pawn = 100
+pieceScore Bishop = 300
+pieceScore Knight = 300
+pieceScore Rook = 500
+pieceScore Queen = 900
+pieceScore King = 0
 
 readPlayer :: Char -> Maybe Player
 readPlayer 'W' = Just White
@@ -128,19 +139,16 @@ opponentSing WHITE = BLACK
 opponentSing BLACK = WHITE
 
 pieces :: Board b => Player -> b -> [(Index, Shape)]
-pieces p b = [(i, shape x) | (i, Just x) <- entries b, owner x == p]
-
--- from Bart's tutorial
-pieceScore :: Shape -> Int
-pieceScore Pawn = 100
-pieceScore Bishop = 300
-pieceScore Knight = 300
-pieceScore Rook = 500
-pieceScore Queen = 900
-pieceScore King = 0
+pieces p b = [(i, shape x) | (i, Just x) <- assocs b, owner x == p]
 
 boardScore :: Board b => Player -> b -> Int
-boardScore p b = sum (map (pieceScore . snd) (pieces p b)) - sum (map (pieceScore . snd) (pieces (opponent p) b))
+-- boardScore p b = sum (map (pieceScore . snd) (pieces p b)) - sum (map (pieceScore . snd) (pieces (opponent p) b))
+-- boardScore p b = sum [(if p == p' then 1 else -1) * pieceScore s | (i, Just (Piece p' s)) <- assocs b]
+boardScore p = go 0 . elems
+  where
+    go n [] = n
+    go n (Just (Piece p' s) : xs) = go (if p == p' then n + pieceScore s else n - pieceScore s) xs
+    go n (Nothing : xs) = go n xs
 
 -- The board is won if the opponent's king is gone.
 won :: Board b => Player -> b -> Bool
@@ -255,5 +263,6 @@ tradeTurns w b = do
           return Nothing
 
 -- Run a game to completion.
-playGame :: (c e, c' e) => Agent c -> Agent c' -> Eff e Player -- todo! doesn't account for draw
-playGame w b = tradeTurns w b >>= maybe (playGame w b) return
+playGame :: (c e, c' e) => Int -> Agent c -> Agent c' -> Eff e GameOutcome
+playGame 0 w b = return Tied
+playGame n w b = tradeTurns w b >>= maybe (playGame (n-1) w b) (return . Won)

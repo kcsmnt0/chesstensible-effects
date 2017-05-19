@@ -9,5 +9,8 @@ instance Grid a (Array Index a) where
   size b = let (w,h) = snd (bounds b) in (w+1,h+1)
   (!) = (Array.!)
   replace i x = (// [(i,x)])
+  indices = Array.indices
+  assocs = Array.assocs
+  elems = Array.elems
 
 type ArrayBoard = Array Index (Maybe Piece)
