@@ -20,7 +20,7 @@ data AgentState (p :: Player) b = AgentState { agentState :: b } -- todo! turn c
 class (Board b, Member (State (AgentState p b)) effs, Member Console effs) => AgentEffects p b effs
 instance (Board b, Member (State (AgentState p b)) effs, Member Console effs) => AgentEffects p b effs
 
-data Rank = NegativeInfinity | Rank Int | PositiveInfinity deriving (Eq, Ord)
+data Rank = NegativeInfinity | Rank Int | PositiveInfinity deriving (Show, Eq, Ord)
 
 initialAgentState :: forall b p. Board b => AgentState p b
 initialAgentState = AgentState @p @b initialBoard
@@ -41,20 +41,18 @@ compareMoveResult (Capture s) (Capture t) = compare (pieceScore s) (pieceScore t
 compareMoveRecord :: MoveRecord -> MoveRecord -> Ordering
 compareMoveRecord = compareMoveResult `on` result
 
-rank :: Board b => b -> Int -> Player -> Rank -> Rank -> Rank
-rank b d p alpha beta =
-  if d == 0 then
-    Rank $ boardScore p b
-  else if lost p b then
-    NegativeInfinity
-  else
-    let ms = {- sortBy compareMoveRecord $ -} moves p b in
-      fst $ run $ flip execState (NegativeInfinity, alpha) $ runEarlyReturn $ runChoices $ do
-        MoveRecord e m <- choose ms
-        (best :: Rank, alpha' :: Rank) <- get
-        let v = negateRank $ rank (makeMove m b) (d-1) (opponent p) (negateRank beta) (negateRank alpha')
-        put (max best v, max alpha' v)
-        when (alpha' >= beta) $ earlyReturn @[()] [] -- this is just a sentinel value - the state is what matters
+rank :: Board board => board -> Int -> Player -> Rank -> Rank -> Rank
+rank board 0 p alpha beta = Rank $ boardScore p board
+rank board d p alpha beta
+  | lost p board = NegativeInfinity -- todo: these checks might be expensive
+  | won p board = PositiveInfinity
+  | otherwise =
+      either id fst $ run $ runEarlyReturn $ flip execState (NegativeInfinity, alpha) $ runChoices $ do
+        MoveRecord e m <- choose $ sortBy (flip compareMoveRecord) $ moves p board
+        (v' :: Rank, alpha' :: Rank) <- get
+        let v = negateRank $ rank (makeMove m board) (d-1) (opponent p) (negateRank beta) (negateRank alpha')
+        when (v >= beta) $ earlyReturn v
+        put (max v' v, max alpha' v)
 
 negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e MoveOutcome
 negamaxAct d p = do
@@ -65,7 +63,7 @@ negamaxAct d p = do
     ms -> do
       MoveRecord e m <- fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
         m@(MoveRecord e m') <- choose ms
-        return (m, negateRank (rank (makeMove m' b) d (opponent (playerSing p)) NegativeInfinity PositiveInfinity))
+        return (m, negateRank $ rank (makeMove m' b) d (opponent (playerSing p)) NegativeInfinity PositiveInfinity)
       modify $ AgentState @p @b . makeMove m . agentState
       return $ case e of
         Capture King -> Win m

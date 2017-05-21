@@ -6,6 +6,8 @@ import Data.Maybe
 import Grid
 import Text.Read
 
+import Debug.Trace
+
 data Player = Black | White deriving Eq
 data Shape = Pawn | Knight | Bishop | Rook | Queen | King deriving Eq
 data Piece = Piece { owner :: Player, shape :: Shape } deriving Eq
@@ -26,7 +28,8 @@ data PotentialMove = PotentialMove { condition :: Condition, trajectory :: Traje
 type Move = (Index, Index)
 
 -- "Migrate" just means "did not capture". (Is there a chess word for that?)
-data MoveResult = Capture Shape | Migrate deriving (Show, Eq)
+data MoveResult = Capture Shape | Migrate deriving (Show, Eq) -- todo: promote! (NB. promote & capture is possible)
+-- data MoveResult = { captured :: Maybe Shape, promoted :: Bool }
 
 data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
 
@@ -39,7 +42,7 @@ data GameOutcome = Won Player | Tied deriving (Show, Eq)
 -- state within the effectful context that it runs in, so there's no shared board state to pass around.
 -- "act" prompts the agent to take its turn and return the result.
 -- "observe" tells the agent the result of its opponent's move so that it can react effectfully.
-data Agent c = Agent -- todo: can this be a typeclass, actually?
+data Agent c = Agent
   { act     :: forall e. c e => Eff e MoveOutcome
   , observe :: forall e. c e => Move -> Eff e ()
   }
@@ -70,15 +73,6 @@ instance Show Shape where
 instance Show Piece where
   show (Piece White s) = show s
   show (Piece Black s) = map toLower $ show s
-
--- from Dr. Massey's tutorial
-pieceScore :: Shape -> Int
-pieceScore Pawn = 100
-pieceScore Bishop = 300
-pieceScore Knight = 300
-pieceScore Rook = 500
-pieceScore Queen = 900
-pieceScore King = 0
 
 readPlayer :: Char -> Maybe Player
 readPlayer 'W' = Just White
@@ -141,22 +135,16 @@ opponentSing BLACK = WHITE
 pieces :: Board b => Player -> b -> [(Index, Shape)]
 pieces p b = [(i, shape x) | (i, Just x) <- assocs b, owner x == p]
 
+pieceScore :: Shape -> Int
+pieceScore Pawn = 1
+pieceScore Bishop = 3
+pieceScore Knight = 3
+pieceScore Rook = 5
+pieceScore Queen = 9
+pieceScore King = 0
+
 boardScore :: Board b => Player -> b -> Int
--- boardScore p b = sum (map (pieceScore . snd) (pieces p b)) - sum (map (pieceScore . snd) (pieces (opponent p) b))
--- boardScore p b = sum [(if p == p' then 1 else -1) * pieceScore s | (i, Just (Piece p' s)) <- assocs b]
-boardScore p = go 0 . elems
-  where
-    go n [] = n
-    go n (Just (Piece p' s) : xs) = go (if p == p' then n + pieceScore s else n - pieceScore s) xs
-    go n (Nothing : xs) = go n xs
-
--- The board is won if the opponent's king is gone.
-won :: Board b => Player -> b -> Bool
-won p = not . any (maybe False (\(Piece p' s) -> s == King && p' == opponent p)) . elems
-
--- The board is lost if it's won for the opponent. 
-lost :: Board b => Player -> b -> Bool
-lost = won . opponent
+boardScore p b = sum [(if p == p' then 1 else -1) * pieceScore s | (i, Just (Piece p' s)) <- assocs b]
 
 shift :: Index -> Index -> Index
 shift (x,y) (x',y') = (x+x',y+y')
@@ -223,6 +211,12 @@ pieceMoves b i p = do
 moves :: Board b => Player -> b -> [MoveRecord] -- todo: promote
 moves p b = [m | (i,s) <- pieces p b, m <- pieceMoves b i (Piece p s)]
 
+lost :: Board b => Player -> b -> Bool
+lost p b = not (any (maybe False (\(Piece p' s) -> s == King && p' == p)) (elems b)) || null (moves p b)
+
+won :: Board b => Player -> b -> Bool
+won = lost . opponent
+
 -- Update a board with the result of a move.
 makeMove :: Board b => Move -> b -> b
 makeMove (i, j) b = replace i Nothing (replace j (b!i) b)
@@ -248,19 +242,13 @@ initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6)
 -- that the agents represent into one effectful computation.
 tradeTurns :: (c effs, c' effs) => Agent c -> Agent c' -> Eff effs (Maybe Player)
 tradeTurns w b = do
-  m <- act w
-  case m of
+  act w >>= \case
     Lose -> return $ Just Black
     Win m' -> observe b m' >> return (Just White)
-    Move m' -> do
-      observe b m'
-      m'' <- act b
-      case m'' of
-        Lose -> return $ Just White
-        Win m''' -> observe w m''' >> return (Just Black)
-        Move m''' -> do
-          observe w m'''
-          return Nothing
+    Move m' -> observe b m' >> act b >>= \case
+      Lose -> return $ Just White
+      Win m''' -> observe w m''' >> return (Just Black)
+      Move m''' -> observe w m''' >> return Nothing
 
 -- Run a game to completion.
 playGame :: (c e, c' e) => Int -> Agent c -> Agent c' -> Eff e GameOutcome

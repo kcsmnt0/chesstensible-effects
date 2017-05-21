@@ -8,5 +8,8 @@ newtype EarlyReturn e a = EarlyReturn e
 earlyReturn :: Member (EarlyReturn a) effs => a -> Eff effs b
 earlyReturn = send . EarlyReturn
 
-runEarlyReturn :: Eff (EarlyReturn a : effs) a -> Eff effs a
-runEarlyReturn = handleRelay pure $ \(EarlyReturn e) k -> pure e
+runEarlyReturnLocal :: Eff (EarlyReturn a : effs) a -> Eff effs a
+runEarlyReturnLocal = handleRelay pure $ \(EarlyReturn e) k -> pure e
+
+runEarlyReturn :: Eff (EarlyReturn a : effs) b -> Eff effs (Either a b)
+runEarlyReturn = handleRelay (pure . pure) $ \(EarlyReturn e) k -> pure (Left e)

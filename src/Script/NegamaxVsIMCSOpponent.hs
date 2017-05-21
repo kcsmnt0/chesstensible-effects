@@ -13,23 +13,20 @@ import Control.Monad.Freer.Socket
 import Control.Monad.Freer.State
 import Control.Monad.Loops
 import Data.Maybe
-
 import Grid.Array
 import IMCS
 import Text.Read
 
-import Debug.Trace
-
-clientAgent = Negamax.agent @ArrayBoard 5
+clientAgent = Negamax.agent @ArrayBoard 6
 serverAgent = IMCSOpponent.agent
 
-prompt :: Member IO effs => String -> Eff effs String
-prompt p = send (putStrLn (p ++ ": ")) >> send getLine
+prompt :: Member Console effs => String -> Eff effs String
+prompt p = consoleWrite (p ++ ": ") >> consoleRead
 
 runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
 runGame p = flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
-  WHITE -> playGame 40 (clientAgent WHITE) (serverAgent BLACK)
-  BLACK -> playGame 40 (serverAgent WHITE) (clientAgent BLACK)
+  WHITE -> playGame 39 (clientAgent WHITE) (serverAgent BLACK)
+  BLACK -> playGame 39 (serverAgent WHITE) (clientAgent BLACK)
 
 runNegamaxVsIMCSOpponentIO :: IO ()
 runNegamaxVsIMCSOpponentIO = do
@@ -42,7 +39,7 @@ runNegamaxVsIMCSOpponentIO = do
 
     Just g <- iterateWhile isNothing $ do
       games <- list
-      send $ putStrLn $ unlines $ zipWith (++) (map show [0..]) [show g ++ ": " ++ n ++ " " ++ show p | GameOffer g n p <- games]
+      send $ putStrLn $ unlines $ zipWith (++) (map ((++ " ") . show) [0..]) [show g ++ ": " ++ n ++ " " ++ show p | GameOffer g n p <- games]
       fmap readMaybe (send getLine) >>= \case
         Just i | 0 <= i && i < length games -> return $ Just (games !! i)
         _ -> return Nothing
