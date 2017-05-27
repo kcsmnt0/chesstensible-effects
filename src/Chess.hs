@@ -1,6 +1,7 @@
 module Chess where
 
 import Control.Monad.Freer
+import Control.Monad.Loops
 import Data.Char
 import Data.Maybe
 import Grid
@@ -33,7 +34,7 @@ data MoveResult = Capture Shape | Migrate deriving (Show, Eq) -- todo: promote! 
 
 data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
 
-data MoveOutcome = Win Move | Move Move | Lose deriving (Show, Eq)
+data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq)
 
 data GameOutcome = Won Player | Tied deriving (Show, Eq)
 
@@ -43,7 +44,7 @@ data GameOutcome = Won Player | Tied deriving (Show, Eq)
 -- "act" prompts the agent to take its turn and return the result.
 -- "observe" tells the agent the result of its opponent's move so that it can react effectfully.
 data Agent c = Agent
-  { act     :: forall e. c e => Eff e MoveOutcome
+  { act     :: forall e. c e => Eff e TurnOutcome
   , observe :: forall e. c e => Move -> Eff e ()
   }
 
@@ -240,17 +241,18 @@ initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6)
 -- Play one white turn and one black turn, relaying the actions between the two agents. The constraint on the effects
 -- in scope is the union of the two agent constraints, so this essentially interlaves the two effectful coroutines
 -- that the agents represent into one effectful computation.
-tradeTurns :: (c effs, c' effs) => Agent c -> Agent c' -> Eff effs (Maybe Player)
+tradeTurns :: (c effs, c' effs) => Agent c -> Agent c' -> Eff effs (Maybe GameOutcome)
 tradeTurns w b = do
   act w >>= \case
-    Lose -> return $ Just Black
-    Win m' -> observe b m' >> return (Just White)
+    Tie -> return $ Just Tied
+    Lose -> return $ Just $ Won Black
+    Win m' -> observe b m' >> return (Just (Won White))
     Move m' -> observe b m' >> act b >>= \case
-      Lose -> return $ Just White
-      Win m''' -> observe w m''' >> return (Just Black)
+      Tie -> return $ Just Tied
+      Lose -> return $ Just (Won White)
+      Win m''' -> observe w m''' >> return (Just (Won Black))
       Move m''' -> observe w m''' >> return Nothing
 
 -- Run a game to completion.
-playGame :: (c e, c' e) => Int -> Agent c -> Agent c' -> Eff e GameOutcome
-playGame 0 w b = return Tied
-playGame n w b = tradeTurns w b >>= maybe (playGame (n-1) w b) (return . Won)
+playGame :: (c e, c' e) => Agent c -> Agent c' -> Eff e GameOutcome
+playGame w b = untilJust $ tradeTurns w b

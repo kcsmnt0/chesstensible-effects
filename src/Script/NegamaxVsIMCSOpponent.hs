@@ -25,8 +25,8 @@ prompt p = consoleWrite (p ++ ": ") >> consoleRead
 
 runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
 runGame p = flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
-  WHITE -> playGame 39 (clientAgent WHITE) (serverAgent BLACK)
-  BLACK -> playGame 39 (serverAgent WHITE) (clientAgent BLACK)
+  WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
+  BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)
 
 runNegamaxVsIMCSOpponentIO :: IO ()
 runNegamaxVsIMCSOpponentIO = do

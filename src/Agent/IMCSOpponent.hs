@@ -15,11 +15,12 @@ import IMCS
 class (Member (Exc IMCSError) effs, Member Socket effs, Member Console effs) => AgentEffects (p :: Player) effs
 instance (Member (Exc IMCSError) effs, Member Socket effs, Member Console effs) => AgentEffects (p :: Player) effs
 
-imcsOpponentAct :: AgentEffects p effs => PlayerSing p -> Eff effs MoveOutcome
+imcsOpponentAct :: AgentEffects p effs => PlayerSing p -> Eff effs TurnOutcome
 imcsOpponentAct p = do
   moveResp : restResp <- lines <$> socketRecv
   consoleWrite moveResp
-  -- todo: sometimes the board comes in the same request as the move and sometimes it comes in its own second one ...?
+  -- todo: sometimes the board comes in the same request as the move and sometimes it comes in its own second one
+  -- (network-simple buffers to newlines)
   case restResp of
     [] -> socketRecv >>= consoleWrite
     ls -> consoleWrite $ unlines ls

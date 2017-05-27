@@ -17,5 +17,5 @@ runConsoleVsNegamaxIO = do
     -- todo: there should be a way to include these "send all agent effects to IO" functions in the agents themselves
     runConsoleIO $ flip evalState (Console.initialAgentState @ArrayBoard @White) $ -- console agent effects
     flip evalState (Negamax.initialAgentState @ArrayBoard @Black) $                -- negamax agent effects
-    playGame 40 whiteAgent blackAgent
+    playGame whiteAgent blackAgent
   print winner

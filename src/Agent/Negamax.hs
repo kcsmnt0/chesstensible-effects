@@ -43,12 +43,12 @@ rank d p b =
           MoveRecord (Capture King) _ -> return PositiveInfinity
           MoveRecord _ m -> return $ negateRank $ rank (d-1) (opponent p) (makeMove m b)
 
-negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e MoveOutcome
+negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e TurnOutcome
 negamaxAct d p = do
   AgentState b :: AgentState p b <- get
   case moves (playerSing p) b of
     [] -> return Lose
-    ms -> do -- todo: move ordering
+    ms -> do
       -- maximum of a bounded recursive depth-first search through states for each available move
       MoveRecord e m <- fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
         m@(MoveRecord e m') <- choose ms

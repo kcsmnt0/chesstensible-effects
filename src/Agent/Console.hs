@@ -28,14 +28,14 @@ instance (Board b, Member (State (AgentState p b)) e, Member Console e) => Agent
 initialAgentState :: forall b p. Board b => AgentState p b
 initialAgentState = AgentState @_ @b initialBoard
 
-consoleReadMove :: String -> Maybe MoveOutcome
+consoleReadMove :: String -> Maybe TurnOutcome
 consoleReadMove "give up" = Just Lose
 consoleReadMove s = Move <$> readMove s
 
 -- The PlayerSing argument is because there needs to be something to case over when printing the player, and I'm not
 -- sure how to turn a lifted type back into a value - I think the singletons library handles this stuff but I haven't
 -- gotten around to looking into that yet.
-consoleAct :: forall b p effs. AgentEffects p b effs => PlayerSing p -> Eff effs MoveOutcome
+consoleAct :: forall b p effs. AgentEffects p b effs => PlayerSing p -> Eff effs TurnOutcome
 consoleAct p = do
   AgentState b :: AgentState p b <- get
   consoleWrite $ show p
@@ -44,7 +44,6 @@ consoleAct p = do
   case consoleReadMove m of
     Nothing -> consoleWrite "couldn't parse your move" >> consoleAct @b p
     Just Lose -> return Lose
-    Just (Win m) -> error "no you didn't" -- unreachable case (consoleReadMove never returns Win)
     Just (Move m) -> do
       case maybeMove b m of
         Nothing -> consoleWrite "illegal move" >> consoleAct @b p
@@ -53,9 +52,15 @@ consoleAct p = do
           put (AgentState @p b')
           consoleWrite $ showBoard b'
           return $ if r == Capture King then Win m else Move m
+    _ -> error "no you didn't" -- unreachable case (consoleReadMove never returns Win or Tie)
 
 consoleObserve :: forall b p e. AgentEffects p b e => PlayerSing p -> Move -> Eff e ()
 consoleObserve p m = modify (AgentState @p @b . makeMove m . agentState)
 
 agent :: forall b p. Board b => PlayerSing p -> Agent (AgentEffects p b)
 agent p = Agent (consoleAct @b p) (consoleObserve @b p)
+
+type AgentEffects' p b = [State (AgentState p b), Console]
+
+-- agent' :: forall b p. Board b => PlayerSing p -> Agent'' () ?? AgentEffects'
+-- agent' = undefined
