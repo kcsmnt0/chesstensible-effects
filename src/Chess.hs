@@ -34,7 +34,7 @@ data MoveResult = Capture Shape | Migrate deriving (Show, Eq) -- todo: promote! 
 
 data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
 
-data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq)
+data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq) -- todo! Tie needs a last move too
 
 data GameOutcome = Won Player | Tied deriving (Show, Eq)
 
@@ -220,7 +220,11 @@ won = lost . opponent
 
 -- Update a board with the result of a move.
 makeMove :: Board b => Move -> b -> b
-makeMove (i, j) b = replace i Nothing (replace j (b!i) b)
+makeMove (i, j) b = replace i Nothing (replace j pc' b)
+  where
+    pc' = case b!i of
+      Just (Piece p Pawn) | (p == White && snd j == 0) || (p == Black && snd j == 5) -> Just (Piece p Queen)
+      pc -> pc
 
 -- Take a pair of indices and return a strongly-typed move if they represent a legal movement on the board.
 maybeMove :: Board b => b -> Move -> Maybe MoveRecord

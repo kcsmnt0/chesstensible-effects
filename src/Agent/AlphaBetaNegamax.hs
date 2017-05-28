@@ -53,10 +53,6 @@ rank board t d p alpha beta
         when (v >= beta) $ earlyReturn v
         put (max v' v, max alpha' v)
 
--- truncate to the nearest even number (closest to 0)
-floorEven :: Int -> Int
-floorEven x = (x `quot` 2) * 2
-
 negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e TurnOutcome
 negamaxAct d p = do
   AgentState t b :: AgentState p b <- get
@@ -78,7 +74,7 @@ negamaxAct d p = do
 negamaxObserve :: forall b p e. AgentEffects p b e => PlayerSing p -> Move -> Eff e ()
 negamaxObserve p m = do
   AgentState t b :: AgentState p b <- get
-  put $ AgentState @p @b (t-1) (makeMove m b)
+  put $ AgentState @p @b t (makeMove m b)
 
 agent :: forall b p. Board b => Int -> PlayerSing p -> Agent (AgentEffects p b)
 agent d p = Agent (negamaxAct @b d p) (negamaxObserve @b p)
