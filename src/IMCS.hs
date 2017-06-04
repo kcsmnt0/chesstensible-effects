@@ -8,6 +8,8 @@ import Control.Monad.Freer.Exception
 import Control.Monad.Freer.Socket
 import Chess
 
+import Debug.Trace
+
 type GameID = Int
 data GameOffer = GameOffer { gameID :: GameID, name :: String, opponentPlayer :: Maybe Player }
 data IMCSError = IMCSError String
@@ -20,35 +22,24 @@ ensureResponseCode c s = when (take 3 s /= show c) $ throwError $ IMCSError s
 accept :: (Member (Exc IMCSError) effs, Member Socket effs) => GameID -> (forall p. Arr effs (PlayerSing p) a) -> Eff effs a
 accept gid k = do
   socketSend $ "accept " ++ show gid ++ "\r\n"
-  resp <- socketRecv
+  resp <- socketRecvLine
   case take 3 resp of
-    "105" -> socketRecv >> k WHITE -- throw away the board input (todo: maybe that's useful input?)
+    "105" -> socketRecvCount 10 >> k WHITE -- throw away the board input (todo: maybe that's useful input?)
     "106" -> k BLACK
     _ -> throwError $ IMCSError resp
 
 list :: forall effs. (Member (Exc IMCSError) effs, Member Socket effs) => Eff effs [GameOffer]
 list = do
   socketSend "list\r\n"
-  socketRecv >>= ensureResponseCode 211
-  offersResp <- socketRecv
-  runChoices $ choose (map words (lines offersResp)) >>= \case
+  (l:ls) <- socketRecvUntil "."
+  runChoices $ choose (map words ls) >>= \case
     [gid, name, player, opponentTime, ownTime, opponentRank, "[offer]"] -> return $ GameOffer (read gid) name (readPlayer (head player))
     _ -> abandon
 
 me :: (Member (Exc IMCSError) effs, Member Socket effs) => String -> String -> Eff effs ()
 me user pass = do
   socketSend $ "me " ++ user ++ " " ++ pass ++ "\r\n"
-  socketRecv >>= ensureResponseCode 201
-
-offer :: (Member (Exc IMCSError) effs, Member Socket effs) => Maybe Player -> Eff effs Player
-offer player = do
-  socketSend $ "offer" ++ maybe "" ((" " ++) . show) player ++ "\r\n"
-  socketRecv >>= ensureResponseCode 103
-  startResp <- socketRecv
-  case take 3 startResp of
-    "105" -> socketRecv >> return White
-    "106" -> return Black
-    _ -> throwError $ IMCSError startResp
+  socketRecvLine >>= ensureResponseCode 201
 
 quit :: (Member (Exc IMCSError) effs, Member Socket effs) => Eff effs ()
-quit = socketSend "quit\r\n" >> socketRecv >>= ensureResponseCode 200
+quit = socketSend "quit\r\n" >> socketRecvLine >>= ensureResponseCode 200

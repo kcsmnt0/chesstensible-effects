@@ -4,4 +4,4 @@ import Script.ConsoleVsConsole
 import Script.NegamaxVsIMCSOpponent
 import Script.NegamaxVsNegamax
 
-main = runConsoleVsConsoleIO
+main = runNegamaxVsIMCSOpponentIO

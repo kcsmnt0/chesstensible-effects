@@ -2,33 +2,52 @@ module Control.Monad.Freer.Socket where
 
 import Control.Monad.Freer
 import Control.Monad.Freer.Exception
+import Data.List
 import Data.ByteString.Char8 (pack, unpack)
 import Network.Simple.TCP (HostName, ServiceName)
 import qualified Network.Simple.TCP as TCP
 
 -- String-based socket IO.
-data Socket :: * -> * where -- todo: maybe ByteString instead of String? (maybe an arbitrary IsString instance?)
+-- todo: Text-based socket IO (-XOverloadedStrings)
+data Socket :: * -> * where
   Send :: String -> Socket ()
-  Recv :: Socket String
+  Recv :: ([String] -> Bool) -> Socket [String] -- receive until buffer meets predicate
 
 data SocketError = SocketError deriving (Show, Eq)
 
-socketSend :: Member Socket effs => String -> Eff effs ()
-socketSend = send . Send -- todo: there must be a usable English synonym for Send that would avoid this nonsense
+socketSend s = send $ Send s -- todo: there must be a usable English synonym for Send that would avoid this nonsense
+socketRecv p = send $ Recv p
+socketRecvCount i = send $ Recv ((i ==) . length)
+socketRecvUntil l = send $ Recv ((l ==) . last)
 
-socketRecv :: Member Socket effs => Eff effs String
-socketRecv = send Recv
+socketRecvLine :: Member Socket effs => Eff effs String
+socketRecvLine = fmap head . send $ Recv (const True)
+
+breakAfter :: (a -> Bool) -> [a] -> Maybe ([a], [a])
+breakAfter p [] = Nothing
+breakAfter p (x:xs)
+  | p x = Just ([x], xs)
+  | otherwise = do (ys, zs) <- breakAfter p xs; Just (x:ys, zs)
+
+-- network-simple buffers up to newlines automatically
+buffer :: (Member IO effs, Member (Exc SocketError) effs) => TCP.Socket -> ([String] -> Bool) -> [String] -> Eff effs ([String], [String])
+buffer s p = go
+  where
+    -- find the shortest prefix that matches the predicate; if there isn't one, receive and try again
+    -- todo: this is cute but not super efficient
+    go xs = case breakAfter (p . snd) (zip xs (tail (inits xs))) of
+      Nothing ->
+        send @IO (TCP.recv s 65535) >>= \case
+          Nothing -> send @IO (TCP.closeSock s) >> throwError SocketError
+          Just xs' -> go (xs ++ lines (filter (/= '\r') (unpack xs')))
+      Just (xs, ys) -> return (map fst xs, map fst ys)
 
 -- Interpret socket commands in the IO monad, throwing SocketError if the socket is closed unexpectedly.
-runSocketIO :: (Member (Exc SocketError) effs, Member IO effs) => HostName -> ServiceName -> Eff (Socket : effs) a -> Eff effs a
+runSocketIO :: forall a effs. (Member IO effs, Member (Exc SocketError) effs) => HostName -> ServiceName -> Eff (Socket : effs) a -> Eff effs a
 runSocketIO host svc x = do
   s <- fmap fst $ send @IO $ TCP.connectSock host svc
-  x' <- handleRelay pure (handler s) x
-  send @IO $ TCP.closeSock s
-  return x'
+  handleRelayS [] (const pure) (handler s) x <* send @IO (TCP.closeSock s)
   where
-    handler :: (Member (Exc SocketError) effs, Member IO effs) => TCP.Socket -> Socket v -> Arr effs v a -> Eff effs a
-    handler s (Send x) k = send @IO (TCP.send s (pack x)) >>= k
-    handler s Recv k = send @IO (TCP.recv s 4096) >>= \case -- todo: i wonder what i'm supposed to do with this length
-      Just l -> k $ unpack l
-      Nothing -> send @IO (TCP.closeSock s) >> throwError SocketError
+    handler :: TCP.Socket -> [String] -> Socket v -> ([String] -> Arr effs v a) -> Eff effs a
+    handler s buf (Send x) k = send @IO (TCP.send s (pack x)) >>= k buf
+    handler s buf (Recv p) k = do (response, leftover) <- buffer s p buf; k leftover response

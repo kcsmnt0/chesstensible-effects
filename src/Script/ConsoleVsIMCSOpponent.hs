@@ -31,7 +31,7 @@ runGame p = runConsoleIO $ flip evalState (Console.initialAgentState @ArrayBoard
 runConsoleVsIMCSOpponentIO :: IO ()
 runConsoleVsIMCSOpponentIO = do
   result <- runM @IO $ runError @SocketError $ runError @IMCSError $ runConsoleIO $ runSocketIO "imcs.svcs.cs.pdx.edu" "3589" $ do
-    socketRecv >>= ensureResponseCode 100
+    socketRecvLine >>= ensureResponseCode 100
 
     user <- prompt "username"
     pass <- prompt "password"

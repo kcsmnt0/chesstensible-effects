@@ -1,3 +1,4 @@
+-- todo: organization
 module Chess where
 
 import Control.Monad.Freer
@@ -9,9 +10,12 @@ import Text.Read
 
 import Debug.Trace
 
-data Player = Black | White deriving Eq
-data Shape = Pawn | Knight | Bishop | Rook | Queen | King deriving Eq
-data Piece = Piece { owner :: Player, shape :: Shape } deriving Eq
+data Player = Black | White deriving (Eq, Ord)
+data Shape = Pawn | Knight | Bishop | Rook | Queen | King deriving (Eq, Ord, Enum)
+data Piece = Piece { owner :: Player, shape :: Shape } deriving (Eq, Ord)
+
+allPieces :: [Piece]
+allPieces = Piece <$> [Black, White] <*> [Pawn .. King]
 
 type Board = Grid (Maybe Piece)
 
@@ -37,6 +41,8 @@ data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Sh
 data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq) -- todo! Tie needs a last move too
 
 data GameOutcome = Won Player | Tied deriving (Show, Eq)
+
+data Rank = NegativeInfinity | Rank Int | PositiveInfinity deriving (Show, Eq, Ord)
 
 -- An Agent is parameterized over a constraint that applies to a list of effects, requiring the presence of the effects
 -- that the agent needs to run without restricting which other effects can be in context. Each agent maintains its own
@@ -74,6 +80,11 @@ instance Show Shape where
 instance Show Piece where
   show (Piece White s) = show s
   show (Piece Black s) = map toLower $ show s
+
+negateRank :: Rank -> Rank
+negateRank (Rank x) = Rank $ negate x
+negateRank NegativeInfinity = PositiveInfinity
+negateRank PositiveInfinity = NegativeInfinity
 
 readPlayer :: Char -> Maybe Player
 readPlayer 'W' = Just White

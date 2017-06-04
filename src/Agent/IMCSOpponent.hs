@@ -17,13 +17,8 @@ instance (Member (Exc IMCSError) effs, Member Socket effs, Member Console effs) 
 
 imcsOpponentAct :: AgentEffects p effs => PlayerSing p -> Eff effs TurnOutcome
 imcsOpponentAct p = do
-  moveResp : restResp <- lines <$> socketRecv
-  consoleWrite moveResp
-  -- todo: sometimes the board comes in the same request as the move and sometimes it comes in its own second one
-  -- (network-simple buffers to newlines)
-  case restResp of
-    [] -> socketRecv >>= consoleWrite
-    ls -> consoleWrite $ unlines ls
+  moveResp : restResp <- socketRecvCount 11
+  consoleWrite $ unlines (moveResp : restResp)
   case take 3 moveResp of
     -- This looks pretty sketchy, but it's okay for now because the game is over in these cases and I never check the
     -- winning move in any of the scripts I'm using so the error terms are never evaluated.
@@ -32,7 +27,7 @@ imcsOpponentAct p = do
     "232" -> return $ case p of BLACK -> Win (error "toooodo"); WHITE -> Lose
     _ -> do
       let move = readMove $ take 5 $ drop 2 moveResp -- e.g. "! a2-a3 ..."
-      when (head moveResp /= '!' || isNothing move) $ throwError $ IMCSError moveResp -- todo: recovery (possibly)
+      when (isNothing move || head moveResp /= '!') $ throwError $ IMCSError moveResp -- todo: recovery (possibly)
       return $ Move $ fromJust move
 
 imcsOpponentObserve :: AgentEffects p effs => Move -> Eff effs ()

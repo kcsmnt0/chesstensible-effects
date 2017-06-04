@@ -24,14 +24,15 @@ prompt :: Member Console effs => String -> Eff effs String
 prompt p = consoleWrite (p ++ ": ") >> consoleRead
 
 runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
-runGame p = flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
-  WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
-  BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)
+runGame p =
+  flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
+    WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
+    BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)
 
 runNegamaxVsIMCSOpponentIO :: IO ()
 runNegamaxVsIMCSOpponentIO = do
   result <- runM @IO $ runError @SocketError $ runError @IMCSError $ runSocketIO "imcs.svcs.cs.pdx.edu" "3589" $ runConsoleIO $ do
-    socketRecv >>= ensureResponseCode 100
+    socketRecvLine >>= ensureResponseCode 100
 
     user <- prompt "username"
     pass <- prompt "password"

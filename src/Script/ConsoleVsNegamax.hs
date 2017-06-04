@@ -1,7 +1,7 @@
 module Script.ConsoleVsNegamax where
 
 import Agent.Console as Console
-import Agent.Negamax as Negamax
+import Agent.AlphaBetaNegamax as Negamax
 import Chess
 import Control.Monad.Freer
 import Control.Monad.Freer.Console
