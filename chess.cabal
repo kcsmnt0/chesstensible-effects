@@ -17,12 +17,12 @@ executable chess
   other-modules:       Agent.AlphaBetaNegamax
                      , Agent.Console
                      , Agent.IMCSOpponent
-                     , Agent.Negamax
                      , Control.Monad.Freer.Choice
                      , Control.Monad.Freer.Console
                      , Control.Monad.Freer.EarlyReturn
                      , Control.Monad.Freer.Rand
                      , Control.Monad.Freer.Socket
+                     , Control.Monad.Freer.Time
                      , Chess
                      , Grid
                      , Grid.Array
@@ -41,6 +41,7 @@ executable chess
                      , monad-loops
                      , network-simple
                      , random
+                     , time
 
 test-suite test-test
   type:                exitcode-stdio-1.0

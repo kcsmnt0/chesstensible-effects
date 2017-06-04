@@ -10,16 +10,24 @@ import Control.Monad.Freer.Console
 import Control.Monad.Freer.EarlyReturn
 import Control.Monad.Freer.Reader
 import Control.Monad.Freer.State
+import Control.Monad.Freer.Time
 import Data.Function
 import Data.List
+import Data.Time
 
-data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, agentState :: b }
+import Debug.Trace
 
-class (Board b, Member (State (AgentState p b)) effs, Member Console effs) => AgentEffects p b effs
-instance (Board b, Member (State (AgentState p b)) effs, Member Console effs) => AgentEffects p b effs
+data AgentState (p :: Player) b = AgentState { timeLeft :: Seconds, turnsLeft :: Int, board :: b }
+
+class (Board b, Member (State (AgentState p b)) effs, Member Console effs, Member Time effs) => AgentEffects p b effs
+instance (Board b, Member (State (AgentState p b)) effs, Member Console effs, Member Time effs) => AgentEffects p b effs
+
+-- todo: un-hardcode this (softcode?)
+maxTime = 5 * 60
+maxTurns = 40
 
 initialAgentState :: forall b p. Board b => AgentState p b
-initialAgentState = AgentState @p @b 40 initialBoard
+initialAgentState = AgentState @p @b maxTime maxTurns initialBoard
 
 compareMoveResult :: MoveResult -> MoveResult -> Ordering
 compareMoveResult (Capture King) _ = GT
@@ -32,6 +40,7 @@ compareMoveResult (Capture s) (Capture t) = compare (pieceScore s) (pieceScore t
 compareMoveRecord :: MoveRecord -> MoveRecord -> Ordering
 compareMoveRecord = compareMoveResult `on` result
 
+-- todo: shortest win prioritization
 rank :: Board b => b -> Int -> Int -> Player -> Rank -> Rank -> Rank
 rank board t d p alpha beta = if
   | lost p board -> NegativeInfinity -- todo: these won/lost checks might be expensive
@@ -47,28 +56,41 @@ rank board t d p alpha beta = if
         when (v >= beta) $ earlyReturn v
         put (max v' v, max alpha' v)
 
+-- todo: use alpha/beta from previous ID levels
+bestMove :: Board b => b -> Player -> Int -> Int -> MoveRecord
+bestMove b p t d = fst $ maximumBy (compare `on` snd) $ do
+  m@(MoveRecord e m') <- moves p b
+  return (m, negateRank $ rank (makeMove m' b) t d (opponent p) NegativeInfinity PositiveInfinity)
+
 negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e TurnOutcome
 negamaxAct d p = do
-  AgentState t b :: AgentState p b <- get
-  if t <= 0 then
+  st@AgentState{..} :: AgentState p b <- get
+  if turnsLeft <= 0 then
     return Tie
   else do
-    consoleWrite $ showBoard b
-    case moves (playerSing p) b of
+    consoleWrite $ showBoard board
+    case moves (playerSing p) board of
       [] -> return Lose
       ms -> do
-        MoveRecord e m <- fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
-          m@(MoveRecord e m') <- choose ms
-          return (m, negateRank $ rank (makeMove m' b) t d (opponent (playerSing p)) NegativeInfinity PositiveInfinity)
-        put $ AgentState @p @b (t-1) (makeMove m b)
+        -- todo: smarter time management (don't have the agent keep its own time, use server time)
+        let turnTime = (maxTime / fromIntegral maxTurns)
+        start <- now
+        -- todo: is this off by one? even-odd thing?
+        MoveRecord e m <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove board (playerSing p) turnsLeft
+        end <- now
+        put @(AgentState p b) $ st
+          { timeLeft = timeLeft - realToFrac (diffUTCTime end start)
+          , turnsLeft = turnsLeft - 1
+          , board = makeMove m board
+          }
         return $ case e of
           Capture King -> Win m
           _ -> Move m
 
 negamaxObserve :: forall b p e. AgentEffects p b e => PlayerSing p -> Move -> Eff e ()
 negamaxObserve p m = do
-  AgentState t b :: AgentState p b <- get
-  put $ AgentState @p @b t (makeMove m b)
+  st@AgentState{..} :: AgentState p b <- get
+  put @(AgentState p b) $ st { board = makeMove m board }
 
 agent :: forall b p. Board b => Int -> PlayerSing p -> Agent (AgentEffects p b)
 agent d p = Agent (negamaxAct @b d p) (negamaxObserve @b p)

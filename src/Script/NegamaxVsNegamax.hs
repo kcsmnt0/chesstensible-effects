@@ -6,6 +6,7 @@ import Control.Monad.Freer
 import Control.Monad.Freer.Console
 import Control.Monad.Freer.Rand
 import Control.Monad.Freer.State
+import Control.Monad.Freer.Time
 import Grid.Array
 
 runNegamaxVsNegamaxIO :: IO ()
@@ -19,5 +20,5 @@ runNegamaxVsNegamaxIO = do
       let
         stb = Negamax.initialAgentState @ArrayBoard @Black
         stw = Negamax.initialAgentState @ArrayBoard @White
-      flip evalState stb $ flip evalState stw $ playGame whiteAgent blackAgent
+      runTimeIO $ flip evalState stb $ flip evalState stw $ playGame whiteAgent blackAgent
   print winner

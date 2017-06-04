@@ -3,7 +3,7 @@ module Control.Monad.Freer.Rand where
 import Control.Monad.Freer
 import System.Random
 
--- todo: explain this
+-- todo! explain this
 data Rand a where Rand :: forall r. Random r => Rand r
 
 rand :: forall a effs. (Random a, Member Rand effs) => Eff effs a

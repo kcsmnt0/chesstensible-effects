@@ -11,6 +11,7 @@ import Control.Monad.Freer.Console
 import Control.Monad.Freer.Exception
 import Control.Monad.Freer.Socket
 import Control.Monad.Freer.State
+import Control.Monad.Freer.Time
 import Control.Monad.Loops
 import Data.Maybe
 import Grid.Array
@@ -25,7 +26,7 @@ prompt p = consoleWrite (p ++ ": ") >> consoleRead
 
 runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
 runGame p =
-  flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
+  runTimeIO $ flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
     WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
     BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)
 
