@@ -12,10 +12,9 @@ import Control.Monad.Freer.Socket
 import Data.Maybe
 import IMCS
 
-class (Member (Exc IMCSError) effs, Member Socket effs, Member Console effs) => AgentEffects (p :: Player) effs
-instance (Member (Exc IMCSError) effs, Member Socket effs, Member Console effs) => AgentEffects (p :: Player) effs
+type AgentEffects (p :: Player) = [Exc IMCSError, Socket, Console]
 
-imcsOpponentAct :: AgentEffects p effs => PlayerSing p -> Eff effs TurnOutcome
+imcsOpponentAct :: Members (AgentEffects p) effs => PlayerSing p -> Eff effs TurnOutcome
 imcsOpponentAct p = do
   moveResp : restResp <- socketRecvCount 11
   consoleWrite $ unlines (moveResp : restResp)
@@ -30,7 +29,7 @@ imcsOpponentAct p = do
       when (isNothing move || head moveResp /= '!') $ throwError $ IMCSError moveResp -- todo: recovery (possibly)
       return $ Move $ fromJust move
 
-imcsOpponentObserve :: AgentEffects p effs => Move -> Eff effs ()
+imcsOpponentObserve :: Members (AgentEffects p) effs => Move -> Eff effs ()
 imcsOpponentObserve = socketSend . (++ "\n") . showMove
 
 agent :: forall p. PlayerSing p -> Agent (AgentEffects p)

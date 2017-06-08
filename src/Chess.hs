@@ -41,14 +41,13 @@ data GameOutcome = Won Player | Tied deriving (Show, Eq)
 
 data Rank = NegativeInfinity | Rank Int | PositiveInfinity deriving (Show, Eq, Ord)
 
--- An Agent is parameterized over a constraint that applies to a list of effects, requiring the presence of the effects
--- that the agent needs to run without restricting which other effects can be in context. Each agent maintains its own
--- state within the effectful context that it runs in, so there's no shared board state to pass around.
+-- An Agent is parameterized over a list of effects.  Each agent maintains its own state within the effectful context
+-- that it runs in, so there's no shared board state to pass around.
 -- "act" prompts the agent to take its turn and return the result.
 -- "observe" tells the agent the result of its opponent's move so that it can react effectfully.
-data Agent c = Agent
-  { act     :: forall e. c e => Eff e TurnOutcome
-  , observe :: forall e. c e => Move -> Eff e ()
+data Agent es = Agent
+  { act     :: forall effs. Members es effs => Eff effs TurnOutcome
+  , observe :: forall effs. Members es effs => Move -> Eff effs ()
   }
 
 -- Some of my type-level shenanigans depend on Player values lifted to types, but I need them at the term level
@@ -253,7 +252,7 @@ initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6)
 -- Play one white turn and one black turn, relaying the actions between the two agents. The constraint on the effects
 -- in scope is the union of the two agent constraints, so this essentially interlaves the two effectful coroutines
 -- that the agents represent into one effectful computation.
-tradeTurns :: (c effs, c' effs) => Agent c -> Agent c' -> Eff effs (Maybe GameOutcome)
+tradeTurns :: (Members es effs, Members es' effs) => Agent es -> Agent es' -> Eff effs (Maybe GameOutcome)
 tradeTurns w b = do
   act w >>= \case
     Tie -> return $ Just Tied
@@ -266,5 +265,5 @@ tradeTurns w b = do
       Move m''' -> observe w m''' >> return Nothing
 
 -- Run a game to completion.
-playGame :: (c e, c' e) => Agent c -> Agent c' -> Eff e GameOutcome
+playGame :: (Members es effs, Members es' effs) => Agent es -> Agent es' -> Eff effs GameOutcome
 playGame w b = untilJust $ tradeTurns w b

@@ -17,8 +17,7 @@ import Data.Time
 
 data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b }
 
-class (Board b, Member (State (AgentState p b)) effs, Member Console effs, Member Time effs) => AgentEffects p b effs
-instance (Board b, Member (State (AgentState p b)) effs, Member Console effs, Member Time effs) => AgentEffects p b effs
+type AgentEffects p b = [State (AgentState p b), Console, Time]
 
 -- todo: un-hardcode this (softcode?)
 maxTime = 5 * 60
@@ -61,7 +60,7 @@ bestMove b p t d = fst $ maximumBy (compare `on` snd) $ do
   m@(MoveRecord e m') <- moves p b
   return (m, negateRank $ rank (makeMove m' b) t d (opponent p) NegativeInfinity PositiveInfinity)
 
-negamaxAct :: forall b p e. AgentEffects p b e => PlayerSing p -> Eff e TurnOutcome
+negamaxAct :: forall b p e. (Board b, Members (AgentEffects p b) e) => PlayerSing p -> Eff e TurnOutcome
 negamaxAct p = do
   st@AgentState{..} :: AgentState p b <- get
   if turnsLeft <= 0 then
@@ -78,7 +77,7 @@ negamaxAct p = do
           Capture King -> Win m
           _ -> Move m
 
-negamaxObserve :: forall b p e. AgentEffects p b e => PlayerSing p -> Move -> Eff e ()
+negamaxObserve :: forall b p e. (Board b, Members (AgentEffects p b) e) => PlayerSing p -> Move -> Eff e ()
 negamaxObserve p m = do
   st@AgentState{..} :: AgentState p b <- get
   put @(AgentState p b) $ st { board = makeMove m board }
