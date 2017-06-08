@@ -1,6 +1,7 @@
 module Control.Monad.Freer.Console where
 
 import Control.Monad.Freer
+import Control.Monad.Freer.Exception
 
 -- String-based console IO.
 data Console :: * -> * where
@@ -22,3 +23,6 @@ runConsoleIO = handleRelay pure $ flip $ \k -> \case
     handler :: Member IO effs => Console a -> Arr effs a b -> Eff effs b
     handler Read k = send getLine >>= k
     handler (Write s) k = send (putStrLn s) >>= k
+
+runErrorConsole :: (Show e, Member Console effs) => Eff (Exc e : effs) () -> Eff effs ()
+runErrorConsole x = runError x >>= either (consoleWrite . show) return

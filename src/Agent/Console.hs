@@ -50,5 +50,8 @@ consoleAct p = do
 consoleObserve :: forall b p e. (Board b, Members (AgentEffects p b) e) => PlayerSing p -> Move -> Eff e ()
 consoleObserve p m = modify (AgentState @p @b . makeMove m . agentState)
 
+consoleRunIO :: forall b p a effs. (Board b, Member IO effs) => Eff (AgentEffects p b ++ effs) a -> Eff effs a
+consoleRunIO = runConsoleIO . flip evalState initialAgentState
+
 agent :: forall b p. Board b => PlayerSing p -> Agent (AgentEffects p b)
 agent p = Agent (consoleAct @b p) (consoleObserve @b p)

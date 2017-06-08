@@ -12,7 +12,7 @@ import Control.Monad.Freer.Socket
 import Data.Maybe
 import IMCS
 
-type AgentEffects (p :: Player) = [Exc IMCSError, Socket, Console]
+type AgentEffects (p :: Player) = [Socket, Exc SocketError, Exc IMCSError, Console]
 
 imcsOpponentAct :: Members (AgentEffects p) effs => PlayerSing p -> Eff effs TurnOutcome
 imcsOpponentAct p = do
@@ -31,6 +31,10 @@ imcsOpponentAct p = do
 
 imcsOpponentObserve :: Members (AgentEffects p) effs => Move -> Eff effs ()
 imcsOpponentObserve = socketSend . (++ "\n") . showMove
+
+-- only works for effectful computations with no return values, since an error will just print to the console
+imcsOpponentRunIO_ :: Member IO effs => Eff (AgentEffects p ++ effs) () -> Eff effs ()
+imcsOpponentRunIO_ = runConsoleIO . runErrorConsole . runErrorConsole . runSocketIO "imcs.svcs.cs.pdx.edu" "3589"
 
 agent :: forall p. PlayerSing p -> Agent (AgentEffects p)
 agent p = Agent (imcsOpponentAct p) (imcsOpponentObserve @p)

@@ -16,6 +16,9 @@ data IMCSError = IMCSError String
 instance Show GameOffer where
   show GameOffer{..} = unwords $ intersperse " " [show gameID, name, maybe "?" show opponentPlayer]
 
+instance Show IMCSError where
+  show (IMCSError err) = "IMCS error: " ++ err
+
 ensureResponseCode :: Member (Exc IMCSError) effs => Int -> String -> Eff effs ()
 ensureResponseCode c s = when (take 3 s /= show c) $ throwError $ IMCSError s
 

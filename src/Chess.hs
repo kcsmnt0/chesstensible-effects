@@ -15,6 +15,11 @@ data Piece = Piece { owner :: Player, shape :: Shape } deriving (Eq, Ord)
 allPieces :: [Piece]
 allPieces = Piece <$> [Black, White] <*> [Pawn .. King]
 
+-- todo: find somewhere else to put this or maybe find it in a library
+type family (++) as bs where
+  '[] ++ bs = bs
+  (a:as) ++ bs = a : (as ++ bs)
+
 type Board = Grid (Maybe Piece)
 
 -- Each piece type has a mask associated with it that indicates all the spaces it could potentially move to if the
@@ -46,7 +51,7 @@ data Rank = NegativeInfinity | Rank Int | PositiveInfinity deriving (Show, Eq, O
 -- "act" prompts the agent to take its turn and return the result.
 -- "observe" tells the agent the result of its opponent's move so that it can react effectfully.
 data Agent es = Agent
-  { act     :: forall effs. Members es effs => Eff effs TurnOutcome
+  { act :: forall effs. Members es effs => Eff effs TurnOutcome
   , observe :: forall effs. Members es effs => Move -> Eff effs ()
   }
 
