@@ -5,8 +5,6 @@ import Data.Maybe
 import Data.Time
 import qualified System.Timeout as Sys
 
-import Debug.Trace
-
 type Seconds = Double
 
 -- todo! document
@@ -38,7 +36,7 @@ timeoutFixAfter t f x = do t' <- after t; timeoutFix t' f x
 timeoutIterateMapLast :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> a) -> Eff effs a
 timeoutIterateMapLast t f x g = go x
   where
-    go x = traceShow x $ timeout t (g (f x)) >>= \case
+    go x = timeout t (g (f x)) >>= \case
       Nothing -> return (g x)
       Just x' -> go (f x)
 

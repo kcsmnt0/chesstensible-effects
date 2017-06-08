@@ -8,14 +8,14 @@ import Control.Monad.Freer.Exception
 import Control.Monad.Freer.Socket
 import Chess
 
-import Debug.Trace
-
 type GameID = Int
 data GameOffer = GameOffer { gameID :: GameID, name :: String, opponentPlayer :: Maybe Player }
 data IMCSError = IMCSError String
 
 ensureResponseCode :: Member (Exc IMCSError) effs => Int -> String -> Eff effs ()
 ensureResponseCode c s = when (take 3 s /= show c) $ throwError $ IMCSError s
+
+-- todo! offer
 
 -- This function can't return a "PlayerSing p", because p isn't known at compile time, so it takes in a callback that
 -- works for either possible instantiation of p.

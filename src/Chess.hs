@@ -8,8 +8,6 @@ import Data.Maybe
 import Grid
 import Text.Read
 
-import Debug.Trace
-
 data Player = Black | White deriving (Eq, Ord)
 data Shape = Pawn | Knight | Bishop | Rook | Queen | King deriving (Eq, Ord, Enum)
 data Piece = Piece { owner :: Player, shape :: Shape } deriving (Eq, Ord)
@@ -21,7 +19,7 @@ type Board = Grid (Maybe Piece)
 
 -- Each piece type has a mask associated with it that indicates all the spaces it could potentially move to if the
 -- conditions were right. A Condition represents which condition needs to hold.
-data Condition = Empty | Occupied | Whatever deriving (Show, Eq) -- todo! Promote 
+data Condition = Empty | Occupied | Whatever deriving (Show, Eq)
 
 -- A trajectory is just some subset of the spaces a piece can reach: it can either jump to some offset, or slide across
 -- some ray until it hits the edge of the board or another piece.
@@ -33,8 +31,7 @@ data PotentialMove = PotentialMove { condition :: Condition, trajectory :: Traje
 type Move = (Index, Index)
 
 -- "Migrate" just means "did not capture". (Is there a chess word for that?)
-data MoveResult = Capture Shape | Migrate deriving (Show, Eq) -- todo: promote! (NB. promote & capture is possible)
--- data MoveResult = { captured :: Maybe Shape, promoted :: Bool }
+data MoveResult = Capture Shape | Migrate deriving (Show, Eq)
 
 data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
 

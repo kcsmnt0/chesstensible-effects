@@ -15,9 +15,7 @@ import Data.Function
 import Data.List
 import Data.Time
 
-import Debug.Trace
-
-data AgentState (p :: Player) b = AgentState { timeLeft :: Seconds, turnsLeft :: Int, board :: b }
+data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b }
 
 class (Board b, Member (State (AgentState p b)) effs, Member Console effs, Member Time effs) => AgentEffects p b effs
 instance (Board b, Member (State (AgentState p b)) effs, Member Console effs, Member Time effs) => AgentEffects p b effs
@@ -25,9 +23,10 @@ instance (Board b, Member (State (AgentState p b)) effs, Member Console effs, Me
 -- todo: un-hardcode this (softcode?)
 maxTime = 5 * 60
 maxTurns = 40
+turnTime = maxTime / fromIntegral maxTurns
 
 initialAgentState :: forall b p. Board b => AgentState p b
-initialAgentState = AgentState @p @b maxTime maxTurns initialBoard
+initialAgentState = AgentState @p @b maxTurns initialBoard
 
 compareMoveResult :: MoveResult -> MoveResult -> Ordering
 compareMoveResult (Capture King) _ = GT
@@ -72,17 +71,9 @@ negamaxAct d p = do
     case moves (playerSing p) board of
       [] -> return Lose
       ms -> do
-        -- todo: smarter time management (don't have the agent keep its own time, use server time)
-        let turnTime = (maxTime / fromIntegral maxTurns)
-        start <- now
         -- todo: is this off by one? even-odd thing?
         MoveRecord e m <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove board (playerSing p) turnsLeft
-        end <- now
-        put @(AgentState p b) $ st
-          { timeLeft = timeLeft - realToFrac (diffUTCTime end start)
-          , turnsLeft = turnsLeft - 1
-          , board = makeMove m board
-          }
+        put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board }
         return $ case e of
           Capture King -> Win m
           _ -> Move m

@@ -59,8 +59,3 @@ consoleObserve p m = modify (AgentState @p @b . makeMove m . agentState)
 
 agent :: forall b p. Board b => PlayerSing p -> Agent (AgentEffects p b)
 agent p = Agent (consoleAct @b p) (consoleObserve @b p)
-
-type AgentEffects' p b = [State (AgentState p b), Console]
-
--- agent' :: forall b p. Board b => PlayerSing p -> Agent'' () ?? AgentEffects'
--- agent' = undefined
