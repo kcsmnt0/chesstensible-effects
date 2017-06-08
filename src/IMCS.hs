@@ -7,25 +7,36 @@ import Control.Monad.Freer.Choice
 import Control.Monad.Freer.Exception
 import Control.Monad.Freer.Socket
 import Chess
+import Data.List
 
 type GameID = Int
 data GameOffer = GameOffer { gameID :: GameID, name :: String, opponentPlayer :: Maybe Player }
 data IMCSError = IMCSError String
 
+instance Show GameOffer where
+  show GameOffer{..} = unwords $ intersperse " " [show gameID, name, maybe "?" show opponentPlayer]
+
 ensureResponseCode :: Member (Exc IMCSError) effs => Int -> String -> Eff effs ()
 ensureResponseCode c s = when (take 3 s /= show c) $ throwError $ IMCSError s
 
--- todo! offer
+-- todo: "don't care" player choice, custom max times
+offer :: (Member (Exc IMCSError) effs, Member Socket effs) => Player -> Eff effs ()
+offer p = do
+  socketSend $ "offer " ++ show p ++ "\r\n"
+  socketRecvLine >>= ensureResponseCode 103
+  resp <- socketRecvLine
+  case take 3 resp of
+    "105" -> void $ socketRecvCount 10
+    "106" -> return ()
+    _ -> throwError $ IMCSError resp
 
--- This function can't return a "PlayerSing p", because p isn't known at compile time, so it takes in a callback that
--- works for either possible instantiation of p.
-accept :: (Member (Exc IMCSError) effs, Member Socket effs) => GameID -> (forall p. Arr effs (PlayerSing p) a) -> Eff effs a
-accept gid k = do
+accept :: (Member (Exc IMCSError) effs, Member Socket effs) => GameID -> Eff effs Player
+accept gid = do
   socketSend $ "accept " ++ show gid ++ "\r\n"
   resp <- socketRecvLine
   case take 3 resp of
-    "105" -> socketRecvCount 10 >> k WHITE -- throw away the board input (todo: maybe that's useful input?)
-    "106" -> k BLACK
+    "105" -> socketRecvCount 10 >> return White -- throw away the initial board input (todo: maybe that's useful input?)
+    "106" -> return Black
     _ -> throwError $ IMCSError resp
 
 list :: forall effs. (Member (Exc IMCSError) effs, Member Socket effs) => Eff effs [GameOffer]

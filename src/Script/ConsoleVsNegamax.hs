@@ -13,7 +13,7 @@ runConsoleVsNegamaxIO :: IO ()
 runConsoleVsNegamaxIO = do
   let
     whiteAgent = Console.agent @ArrayBoard WHITE
-    blackAgent = Negamax.agent @ArrayBoard 6 BLACK
+    blackAgent = Negamax.agent @ArrayBoard BLACK
   winner <- runM $
     -- todo: there should be a way to include these "send all agent effects to IO" functions in the agents themselves
     runConsoleIO $ flip evalState (Console.initialAgentState @ArrayBoard @White) $ -- console agent effects

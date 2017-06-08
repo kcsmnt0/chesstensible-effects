@@ -31,7 +31,6 @@ executable chess
                      , Script.ConsoleVsIMCSOpponent
                      , Script.ConsoleVsNegamax
                      , Script.NegamaxVsIMCSOpponent
-                     , Script.NegamaxVsNegamax
 
   build-depends:       base >= 4.7 && < 5
                      , array

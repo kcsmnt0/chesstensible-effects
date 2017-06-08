@@ -61,8 +61,8 @@ bestMove b p t d = fst $ maximumBy (compare `on` snd) $ do
   m@(MoveRecord e m') <- moves p b
   return (m, negateRank $ rank (makeMove m' b) t d (opponent p) NegativeInfinity PositiveInfinity)
 
-negamaxAct :: forall b p e. AgentEffects p b e => Int -> PlayerSing p -> Eff e TurnOutcome
-negamaxAct d p = do
+negamaxAct :: forall b p e. AgentEffects p b e => PlayerSing p -> Eff e TurnOutcome
+negamaxAct p = do
   st@AgentState{..} :: AgentState p b <- get
   if turnsLeft <= 0 then
     return Tie
@@ -83,5 +83,5 @@ negamaxObserve p m = do
   st@AgentState{..} :: AgentState p b <- get
   put @(AgentState p b) $ st { board = makeMove m board }
 
-agent :: forall b p. Board b => Int -> PlayerSing p -> Agent (AgentEffects p b)
-agent d p = Agent (negamaxAct @b d p) (negamaxObserve @b p)
+agent :: forall b p. Board b => PlayerSing p -> Agent (AgentEffects p b)
+agent p = Agent (negamaxAct @b p) (negamaxObserve @b p)

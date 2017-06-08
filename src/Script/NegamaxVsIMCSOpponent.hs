@@ -18,37 +18,50 @@ import Grid.Array
 import IMCS
 import Text.Read
 
-clientAgent = Negamax.agent @ArrayBoard 6
+-- It's not known at compile-time which agent will play which color.
+clientAgent = Negamax.agent @ArrayBoard
 serverAgent = IMCSOpponent.agent
+
+data Initiation = Offer | Accept
+
+readInitiation :: String -> Maybe Initiation
+readInitiation "offer" = Just Offer
+readInitiation "accept" = Just Accept
+readInitiation _ = Nothing
 
 prompt :: Member Console effs => String -> Eff effs String
 prompt p = consoleWrite (p ++ ": ") >> consoleRead
 
-runGame :: forall p effs. (Member IO effs, IMCSOpponent.AgentEffects p effs) => PlayerSing p -> Eff effs GameOutcome
-runGame p =
-  runTimeIO $ flip evalState (Negamax.initialAgentState @ArrayBoard @p) $ case p of
-    WHITE -> playGame (clientAgent WHITE) (serverAgent BLACK)
-    BLACK -> playGame (serverAgent WHITE) (clientAgent BLACK)
-
+-- Connect to the server, let the user choose a game offer to accept, and run a local game between a console agent and
+-- one communicating with the IMCS server to represent the other player.
 runNegamaxVsIMCSOpponentIO :: IO ()
-runNegamaxVsIMCSOpponentIO = do
-  result <- runM @IO $ runError @SocketError $ runError @IMCSError $ runSocketIO "imcs.svcs.cs.pdx.edu" "3589" $ runConsoleIO $ do
+runNegamaxVsIMCSOpponentIO = runM $ runConsoleIO $ do
+  result <- runError @SocketError $ runError @IMCSError $ runSocketIO "imcs.svcs.cs.pdx.edu" "3589" $ do
     socketRecvLine >>= ensureResponseCode 100
 
     user <- prompt "username"
     pass <- prompt "password"
     me user pass
 
-    Just g <- iterateWhile isNothing $ do
-      games <- list
-      send $ putStrLn $ unlines $ zipWith (++) (map ((++ " ") . show) [0..]) [show g ++ ": " ++ n ++ " " ++ show p | GameOffer g n p <- games]
-      fmap readMaybe (send getLine) >>= \case
-        Just i | 0 <= i && i < length games -> return $ Just (games !! i)
-        _ -> return Nothing
+    init <- untilJust (readInitiation <$> prompt "offer/accept")
+    player <- case init of
+      Offer -> do
+        p <- untilJust (readPlayer . head <$> prompt "player (W/B)")
+        offer p
+        return p
 
-    accept (gameID g) runGame
+      Accept -> accept <=< untilJust $ do
+        games <- list
+        consoleWrite $ unlines $ zipWith (++) [show x ++ ": " | x <- [0..]] (map show games)
+        fmap readMaybe (send getLine) >>= \case
+          Just i | 0 <= i && i < length games -> return $ Just $ gameID (games !! i)
+          _ -> return Nothing
 
-  putStrLn $ case result of
+    runTimeIO $ case player of
+      White -> evalState (playGame (clientAgent WHITE) (serverAgent BLACK)) $ Negamax.initialAgentState @ArrayBoard @White
+      Black -> evalState (playGame (serverAgent WHITE) (clientAgent BLACK)) $ Negamax.initialAgentState @ArrayBoard @Black
+
+  consoleWrite $ case result of
     Left SocketError -> "socket something error happens"
     Right (Left (IMCSError err)) -> "IMCS error: " ++ err
     Right (Right winner) -> show winner ++ " wins!"
