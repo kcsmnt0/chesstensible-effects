@@ -16,24 +16,9 @@ import Grid
 type HashKey = (Index, Piece)
 type Hash = Word64
 type HashCache = Map HashKey Hash
-
--- todo: this could just be a generic Key a = Key a Hash
-data Key = Key
-  { depth :: Int
-  , turnsLeft :: Int
-  , evaluatingPlayer :: Player
-  , alpha :: Rank
-  , beta :: Rank
-  , boardHash :: Hash
-  } deriving (Show, Eq, Ord)
-
-type Table = Map Key Rank
-
-data Zobrist = Zobrist
-  { hashCache :: HashCache
-  , size :: Int
-  , table :: Table
-  }
+data Key k = Key { key :: k, hash :: Hash } deriving (Show, Eq, Ord)
+type Table k = Map (Key k) Rank
+data Zobrist k = Zobrist { hashCache :: HashCache , size :: Int , table :: Table k }
 
 initialHashCache :: Member Rand effs => Eff effs HashCache
 initialHashCache = fmap Map.fromList $ runChoices $ do
@@ -43,28 +28,27 @@ initialHashCache = fmap Map.fromList $ runChoices $ do
   r <- rand
   return (((x,y), p), r)
 
-hash :: Board b => HashCache -> b -> Hash
-hash hc b = foldr xor 0 [hc Map.! (i,p) | (i, Just p) <- assocs b]
+initialZobrist :: Member Rand effs => Int -> Eff effs (Zobrist k)
+initialZobrist size = do
+  hc <- initialHashCache
+  return $ Zobrist hc size Map.empty
 
-key :: Board b => Int -> Int -> Player -> Rank -> Rank -> b -> HashCache -> Key
-key d t p al bt bd hc = Key d t p al bt (hash hc bd)
+hashBoard :: Board b => HashCache -> b -> Hash
+hashBoard hc b = foldr xor 0 [hc Map.! (i,p) | (i, Just p) <- assocs b]
 
-lookup :: Key -> Zobrist -> Maybe Rank
+lookup :: Ord k => Key k -> Zobrist k -> Maybe Rank
 lookup k = Map.lookup k . table
 
-insertKey :: Key -> Rank -> Zobrist -> Zobrist
-insertKey k r z@Zobrist{..} = case Map.lookup k table of
+insert :: Ord k => Key k -> Rank -> Zobrist k -> Zobrist k
+insert k r z@Zobrist{..} = case Map.lookup k table of
   Nothing -> Zobrist hashCache size $ Map.insert k r $
     if Map.size table >= size then
       -- since the hashes are random, deleting the key with the minimum hash should be the same as deleting a random key
       -- todo: ...right?
-      Map.delete (minimumBy (compare `on` boardHash) (Map.keys table)) table
+      Map.delete (minimumBy (compare `on` hash) (Map.keys table)) table
     else
       table
 
   Just r'
     | r == r' -> z
     | otherwise -> error "hash collision"
-
-insert :: Board b => Int -> Int -> Player -> Rank -> Rank -> b -> Rank -> Zobrist -> Zobrist
-insert d t p al bt bd r z = insertKey (key d t p al bt bd (hashCache z)) r z

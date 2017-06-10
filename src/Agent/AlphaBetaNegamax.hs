@@ -13,18 +13,30 @@ import Control.Monad.Freer.Time
 import Data.Function
 import Data.List
 import Data.Time
---
+import Zobrist (Zobrist, initialZobrist)
+import qualified Zobrist as Zobrist
+
 -- todo: un-hardcode this (softcode?)
 maxTime = 5 * 60
 maxTurns = 40
 turnTime = maxTime / fromIntegral maxTurns
 
-data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b }
+data SearchState = SearchState
+  { depth :: Int
+  , turnsRemaining :: Int
+  , player :: Player
+  , alpha :: Rank
+  , beta :: Rank
+  } deriving (Show, Eq, Ord)
+
+type TTable = Zobrist SearchState
+
+data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b, ttable :: TTable }
 
 type AgentEffects p b = [State (AgentState p b), Console, Time]
 
-initialAgentState :: forall b p. Board b => AgentState p b
-initialAgentState = AgentState @p @b maxTurns initialBoard
+initialAgentState :: forall b p effs. (Board b, Member Rand effs) => Eff effs (AgentState p b)
+initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist 1000
 
 compareMoveResult :: MoveResult -> MoveResult -> Ordering
 compareMoveResult (Capture King) _ = GT
@@ -38,26 +50,27 @@ compareMoveRecord :: MoveRecord -> MoveRecord -> Ordering
 compareMoveRecord = compareMoveResult `on` result
 
 -- todo: shortest win prioritization
-rank :: Board b => b -> Int -> Int -> Player -> Rank -> Rank -> Rank
+rank :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => b -> Int -> Int -> Player -> Rank -> Rank -> Eff effs Rank
 rank board t d p alpha beta
-  | lost p board = NegativeInfinity -- todo: these won/lost checks might be expensive
-  | won p board = PositiveInfinity
-  | (t == 0) = Rank 0
-  | (d == 0) = Rank $ boardScore p board
+  | lost p board = return NegativeInfinity -- todo: these won/lost checks might be expensive
+  | won p board = return PositiveInfinity
+  | (t == 0) = return $ Rank 0
+  | (d == 0) = return $ Rank $ boardScore p board
   | otherwise =
       -- todo! explain the effects here
-      either id fst $ run $ runEarlyReturn $ flip execState (NegativeInfinity, alpha) $ runChoices $ do
+      fmap (either id fst) $ runEarlyReturn $ flip execState (NegativeInfinity, alpha) $ runChoices $ do
         MoveRecord e m <- choose $ sortBy (flip compareMoveRecord) $ moves p board
         (v' :: Rank, alpha' :: Rank) <- get
-        let v = negateRank $ rank (makeMove m board) (t-1) (d-1) (opponent p) (negateRank beta) (negateRank alpha')
+        v <- negateRank <$> rank @b @p (makeMove m board) (t-1) (d-1) (opponent p) (negateRank beta) (negateRank alpha')
         when (v >= beta) $ earlyReturn v
         put (max v' v, max alpha' v)
 
 -- todo: use alpha/beta from previous ID levels
-bestMove :: Board b => b -> Player -> Int -> Int -> MoveRecord
-bestMove b p t d = fst $ maximumBy (compare `on` snd) $ do
-  m@(MoveRecord e m') <- moves p b
-  return (m, negateRank $ rank (makeMove m' b) t d (opponent p) NegativeInfinity PositiveInfinity)
+bestMove :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => b -> Player -> Int -> Int -> Eff effs MoveRecord
+bestMove b p t d = fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
+  m@(MoveRecord e m') <- choose $ moves p b
+  r <- rank @b @p (makeMove m' b) t d (opponent p) NegativeInfinity PositiveInfinity
+  return (m, negateRank r)
 
 negamaxAct :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => PlayerSing p -> Eff effs TurnOutcome
 negamaxAct p = do
@@ -70,7 +83,7 @@ negamaxAct p = do
       [] -> return Lose
       ms -> do
         -- todo: is this off by one? even-odd thing?
-        MoveRecord e m <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove board (playerSing p) turnsLeft
+        MoveRecord e m <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove @b @p board (playerSing p) turnsLeft
         put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board }
         return $ case e of
           Capture King -> Win m
@@ -82,7 +95,7 @@ negamaxObserve p m = do
   put @(AgentState p b) $ st { board = makeMove m board }
 
 negamaxRunIO :: forall b p a effs. (Board b, Member IO effs) => Eff (AgentEffects p b ++ effs) a -> Eff effs a
-negamaxRunIO = runTimeIO . runConsoleIO . flip evalState initialAgentState
+negamaxRunIO x = runRandIO initialAgentState >>= runTimeIO . runConsoleIO . evalState x
 
 agent :: forall b p. Board b => PlayerSing p -> Agent (AgentEffects p b)
 agent p = Agent (negamaxAct @b p) (negamaxObserve @b p)

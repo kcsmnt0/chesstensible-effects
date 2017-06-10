@@ -24,24 +24,24 @@ after t = addUTCTime (realToFrac t) <$> now
 timeoutAfter :: Member Time effs => Seconds -> a -> Eff effs (Maybe a)
 timeoutAfter t x = do t' <- after t; timeout t' x
 
-timeoutFix :: Member Time effs => UTCTime -> (a -> a) -> a -> Eff effs a
-timeoutFix t f x = timeout t (f x) >>= \case
+timeoutFixAt :: Member Time effs => UTCTime -> (a -> a) -> a -> Eff effs a
+timeoutFixAt t f x = timeout t (f x) >>= \case
   Nothing -> return x
-  Just x' -> timeoutFix t f x'
+  Just x' -> timeoutFixAt t f x'
 
 timeoutFixAfter :: Member Time effs => Seconds -> (a -> a) -> a -> Eff effs a
-timeoutFixAfter t f x = do t' <- after t; timeoutFix t' f x
+timeoutFixAfter t f x = do t' <- after t; timeoutFixAt t' f x
 
 -- todo: is there a good name/abstraction for this? (timeoutFold?)
-timeoutIterateMapLast :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> a) -> Eff effs a
-timeoutIterateMapLast t f x g = go x
+timeoutIterateMapLastAt :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> Eff effs a) -> Eff effs a
+timeoutIterateMapLastAt t f x g = go x
   where
     go x = timeout t (g (f x)) >>= \case
-      Nothing -> return (g x)
+      Nothing -> g x
       Just x' -> go (f x)
 
-timeoutIterateMapLastAfter :: (Show e, Member Time effs) => Seconds -> (e -> e) -> e -> (e -> a) -> Eff effs a
-timeoutIterateMapLastAfter t f x g = do t' <- after t; timeoutIterateMapLast t' f x g
+timeoutIterateMapLastAfter :: (Show e, Member Time effs) => Seconds -> (e -> e) -> e -> (e -> Eff effs a) -> Eff effs a
+timeoutIterateMapLastAfter t f x g = do t' <- after t; timeoutIterateMapLastAt t' f x g
 
 runTimeIO :: Member IO effs => Eff (Time : effs) a -> Eff effs a
 runTimeIO = handleRelay pure $ \m k -> case m of

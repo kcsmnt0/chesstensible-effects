@@ -28,7 +28,6 @@ executable chess
                      , Grid.Array
                      , IMCS
                      , Script.ConsoleVsConsole
-                     , Script.ConsoleVsIMCSOpponent
                      , Script.ConsoleVsNegamax
                      , Script.NegamaxVsIMCSOpponent
                      , Zobrist

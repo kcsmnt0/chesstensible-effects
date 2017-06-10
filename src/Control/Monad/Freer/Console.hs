@@ -14,6 +14,9 @@ consoleRead = send Read
 consoleWrite :: Member Console effs => String -> Eff effs ()
 consoleWrite = send . Write
 
+prompt :: Member Console effs => String -> Eff effs String
+prompt p = consoleWrite (p ++ ": ") >> consoleRead
+
 -- Interpret console commands in the IO monad. 
 runConsoleIO :: Member IO effs => Eff (Console : effs) a -> Eff effs a
 runConsoleIO = handleRelay pure $ flip $ \k -> \case

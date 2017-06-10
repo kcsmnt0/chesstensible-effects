@@ -26,9 +26,6 @@ readInitiation "offer" = Just Offer
 readInitiation "accept" = Just Accept
 readInitiation _ = Nothing
 
-prompt :: Member Console effs => String -> Eff effs String
-prompt p = consoleWrite (p ++ ": ") >> consoleRead
-
 -- Connect to the server, let the user choose a game offer to accept, and run a local game between a console agent and
 -- one communicating with the IMCS server to represent the other player.
 runNegamaxVsIMCSOpponentIO :: IO ()
