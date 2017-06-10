@@ -1,5 +1,3 @@
-{-# language UndecidableInstances #-}
-
 module Agent.AlphaBetaNegamax where
 
 import Chess
@@ -8,21 +6,22 @@ import Control.Monad.Freer
 import Control.Monad.Freer.Choice
 import Control.Monad.Freer.Console
 import Control.Monad.Freer.EarlyReturn
+import Control.Monad.Freer.Rand
 import Control.Monad.Freer.Reader
 import Control.Monad.Freer.State
 import Control.Monad.Freer.Time
 import Data.Function
 import Data.List
 import Data.Time
-
-data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b }
-
-type AgentEffects p b = [State (AgentState p b), Console, Time]
-
+--
 -- todo: un-hardcode this (softcode?)
 maxTime = 5 * 60
 maxTurns = 40
 turnTime = maxTime / fromIntegral maxTurns
+
+data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b }
+
+type AgentEffects p b = [State (AgentState p b), Console, Time]
 
 initialAgentState :: forall b p. Board b => AgentState p b
 initialAgentState = AgentState @p @b maxTurns initialBoard
@@ -40,12 +39,12 @@ compareMoveRecord = compareMoveResult `on` result
 
 -- todo: shortest win prioritization
 rank :: Board b => b -> Int -> Int -> Player -> Rank -> Rank -> Rank
-rank board t d p alpha beta = if
-  | lost p board -> NegativeInfinity -- todo: these won/lost checks might be expensive
-  | won p board -> PositiveInfinity
-  | (t == 0) -> Rank 0
-  | (d == 0) -> Rank $ boardScore p board
-  | otherwise ->
+rank board t d p alpha beta
+  | lost p board = NegativeInfinity -- todo: these won/lost checks might be expensive
+  | won p board = PositiveInfinity
+  | (t == 0) = Rank 0
+  | (d == 0) = Rank $ boardScore p board
+  | otherwise =
       -- todo! explain the effects here
       either id fst $ run $ runEarlyReturn $ flip execState (NegativeInfinity, alpha) $ runChoices $ do
         MoveRecord e m <- choose $ sortBy (flip compareMoveRecord) $ moves p board

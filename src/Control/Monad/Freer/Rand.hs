@@ -11,4 +11,4 @@ rand = send Rand
 
 -- todo: generate an IO seed at the start and feed it through the rest of the computation purely
 runRandIO :: forall a effs. Member IO effs => Eff (Rand : effs) a -> Eff effs a
-runRandIO = handleRelay pure $ \(Rand :: Rand v) k -> send (randomIO @v) >>= k
+runRandIO = handleRelay pure $ \Rand k -> send randomIO >>= k

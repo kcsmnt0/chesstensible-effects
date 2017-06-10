@@ -12,14 +12,15 @@ choose xs = send $ Choose xs
 abandon :: Member Choice effs => Eff effs a
 abandon = choose []
 
--- Equivalent to Control.Monad.guard.
+-- Basically equivalent to Control.Monad.guard.
 abandonIf :: Member Choice effs => Bool -> Eff effs ()
 abandonIf True = abandon
 abandonIf False = return ()
 
 -- Collect the results of all branches into a list.
+-- todo: i think this actually works for any monad (with minor tweaks)
 runChoices :: Eff (Choice : effs) a -> Eff effs [a]
-runChoices = handleRelay (pure . pure) handler
+runChoices = handleRelay (pure . pure) $ \(Choose bs) k -> join <$> mapM k bs
   where
     handler :: Choice a -> Arr effs a [b] -> Eff effs [b]
-    handler (Choose bs) k = join <$> mapM k bs -- todo: i think this actually works for any monad (with minor tweaks)
+    handler (Choose bs) k = join <$> mapM k bs
