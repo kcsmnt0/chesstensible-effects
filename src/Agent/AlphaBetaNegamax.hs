@@ -13,13 +13,13 @@ import Control.Monad.Freer.Time
 import Data.Function
 import Data.List
 import Data.Time
-import Zobrist (Zobrist, initialZobrist)
-import qualified Zobrist as Zobrist
+import Zobrist
+
+import Debug.Trace
 
 -- todo: un-hardcode this (softcode?)
-maxTime = 5 * 60
 maxTurns = 40
-turnTime = maxTime / fromIntegral maxTurns
+turnTime = 5
 
 data SearchState = SearchState
   { depth :: Int
@@ -36,7 +36,7 @@ data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b, tta
 type AgentEffects p b = [State (AgentState p b), Console, Time]
 
 initialAgentState :: forall b p effs. (Board b, Member Rand effs) => Eff effs (AgentState p b)
-initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist 1000
+initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist (2^20)
 
 compareMoveResult :: MoveResult -> MoveResult -> Ordering
 compareMoveResult (Capture King) _ = GT
@@ -49,27 +49,36 @@ compareMoveResult (Capture s) (Capture t) = compare (pieceScore s) (pieceScore t
 compareMoveRecord :: MoveRecord -> MoveRecord -> Ordering
 compareMoveRecord = compareMoveResult `on` result
 
--- todo: shortest win prioritization
-rank :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => b -> Int -> Int -> Player -> Rank -> Rank -> Eff effs Rank
-rank board t d p alpha beta
-  | lost p board = return NegativeInfinity -- todo: these won/lost checks might be expensive
-  | won p board = return PositiveInfinity
-  | (t == 0) = return $ Rank 0
-  | (d == 0) = return $ Rank $ boardScore p board
-  | otherwise =
-      -- todo! explain the effects here
-      fmap (either id fst) $ runEarlyReturn $ flip execState (NegativeInfinity, alpha) $ runChoices $ do
-        MoveRecord e m <- choose $ sortBy (flip compareMoveRecord) $ moves p board
-        (v' :: Rank, alpha' :: Rank) <- get
-        v <- negateRank <$> rank @b @p (makeMove m board) (t-1) (d-1) (opponent p) (negateRank beta) (negateRank alpha')
-        when (v >= beta) $ earlyReturn v
-        put (max v' v, max alpha' v)
+-- this is the critical loop so it's worth avoiding Eff and writing it in pure style for the sake of speed
+-- (that's the truth, i profiled)
+-- todo: this is uglier than it has to be though
+rank :: Board b => HashCache -> b -> Hash -> TTable -> SearchState -> (Rank, TTable)
+rank hc bd h tt s@SearchState{..} =
+  case Zobrist.lookup key tt of
+    Just r -> (r, tt)
+    Nothing
+      | lost player bd -> leaf NegativeInfinity tt
+      | won player bd -> leaf PositiveInfinity tt
+      | turnsRemaining == 0 -> leaf (Rank 0) tt
+      | depth == 0 -> leaf (Rank (boardScore player bd)) tt
+      | otherwise -> go (sortBy (flip compareMoveRecord) (moves player bd)) NegativeInfinity alpha beta tt
+  where
+    key = Key s h
 
--- todo: use alpha/beta from previous ID levels
+    leaf r tt = (r, Zobrist.insertKey key r tt)
+
+    go [] v al bt tt = (v, tt)
+    go ((move -> m) : ms) v al bt tt = if r >= bt then (r, tt') else go ms (max r v) (max r al) bt tt'
+      where
+        sst = SearchState (depth - 1) (turnsRemaining - 1) (opponent player) (negateRank bt) (negateRank al)
+        (negateRank -> r, tt') = rank hc (makeMove m bd) (moveHash hc bd m h) tt sst
+
 bestMove :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => b -> Player -> Int -> Int -> Eff effs MoveRecord
 bestMove b p t d = fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
   m@(MoveRecord e m') <- choose $ moves p b
-  r <- rank @b @p (makeMove m' b) t d (opponent p) NegativeInfinity PositiveInfinity
+  st@AgentState{..} :: AgentState p b <- get
+  let (r, tt') = rank (hashCache ttable) (makeMove m' b) (boardHash (hashCache ttable) b) ttable $ SearchState d t (opponent p) NegativeInfinity PositiveInfinity
+  modify @(AgentState p b) $ \s -> s { ttable = tt' }
   return (m, negateRank r)
 
 negamaxAct :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => PlayerSing p -> Eff effs TurnOutcome
@@ -83,7 +92,7 @@ negamaxAct p = do
       [] -> return Lose
       ms -> do
         -- todo: is this off by one? even-odd thing?
-        MoveRecord e m <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove @b @p board (playerSing p) turnsLeft
+        MoveRecord e m <- bestMove @b @p board (playerSing p) turnsLeft 7
         put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board }
         return $ case e of
           Capture King -> Win m

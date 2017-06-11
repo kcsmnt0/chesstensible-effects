@@ -10,9 +10,9 @@ executable chess
   default-language:    Haskell2010
   ghc-options:         -O2 -fwarn-incomplete-patterns
   default-extensions:  AllowAmbiguousTypes ApplicativeDo ConstraintKinds DataKinds FlexibleContexts FlexibleInstances
-                       FunctionalDependencies GADTs KindSignatures LambdaCase MultiParamTypeClasses NamedFieldPuns
-                       PolyKinds RankNTypes RecordWildCards ScopedTypeVariables TypeApplications TypeFamilies
-                       TypeOperators ViewPatterns
+                       FunctionalDependencies GADTs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf
+                       NamedFieldPuns PolyKinds RankNTypes RecordWildCards ScopedTypeVariables TypeApplications
+                       TypeFamilies TypeOperators ViewPatterns
 
   other-modules:       Agent.AlphaBetaNegamax
                      , Agent.Console

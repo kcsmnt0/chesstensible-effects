@@ -24,19 +24,18 @@ after t = addUTCTime (realToFrac t) <$> now
 timeoutAfter :: Member Time effs => Seconds -> a -> Eff effs (Maybe a)
 timeoutAfter t x = do t' <- after t; timeout t' x
 
-timeoutFixAt :: Member Time effs => UTCTime -> (a -> a) -> a -> Eff effs a
-timeoutFixAt t f x = timeout t (f x) >>= \case
-  Nothing -> return x
-  Just x' -> timeoutFixAt t f x'
+timeoutFixAt :: Member Time effs => UTCTime -> (a -> Eff effs a) -> a -> Eff effs a
+timeoutFixAt t f x = f x >>= timeout t >>= maybe (return x) (timeoutFixAt t f)
 
-timeoutFixAfter :: Member Time effs => Seconds -> (a -> a) -> a -> Eff effs a
+timeoutFixAfter :: Member Time effs => Seconds -> (a -> Eff effs a) -> a -> Eff effs a
 timeoutFixAfter t f x = do t' <- after t; timeoutFixAt t' f x
 
 -- todo: is there a good name/abstraction for this? (timeoutFold?)
+-- todo: this is janky and slightly unreliable (maybe try https://hackage.haskell.org/package/time-out)
 timeoutIterateMapLastAt :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> Eff effs a) -> Eff effs a
 timeoutIterateMapLastAt t f x g = go x
   where
-    go x = timeout t (g (f x)) >>= \case
+    go x = traceShow x $ timeout t (g (f x)) >>= \case
       Nothing -> g x
       Just x' -> go (f x)
 
