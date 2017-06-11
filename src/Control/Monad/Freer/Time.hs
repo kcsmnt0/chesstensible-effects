@@ -31,15 +31,14 @@ timeoutFixAfter :: Member Time effs => Seconds -> (a -> Eff effs a) -> a -> Eff 
 timeoutFixAfter t f x = do t' <- after t; timeoutFixAt t' f x
 
 -- todo: is there a good name/abstraction for this? (timeoutFold?)
--- todo: this is janky and slightly unreliable (maybe try https://hackage.haskell.org/package/time-out)
-timeoutIterateMapLastAt :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> Eff effs a) -> Eff effs a
+timeoutIterateMapLastAt :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> a) -> Eff effs a
 timeoutIterateMapLastAt t f x g = go x
   where
     go x = timeout t (g (f x)) >>= \case
-      Nothing -> g x
-      Just x' -> go (f x)
+      Nothing -> return $ g x
+      Just x' -> go $ f x
 
-timeoutIterateMapLastAfter :: (Show e, Member Time effs) => Seconds -> (e -> e) -> e -> (e -> Eff effs a) -> Eff effs a
+timeoutIterateMapLastAfter :: (Show e, Member Time effs) => Seconds -> (e -> e) -> e -> (e -> a) -> Eff effs a
 timeoutIterateMapLastAfter t f x g = do t' <- after t; timeoutIterateMapLastAt t' f x g
 
 runTimeIO :: Member IO effs => Eff (Time : effs) a -> Eff effs a

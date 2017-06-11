@@ -73,13 +73,11 @@ rank hc bd h tt s@SearchState{..} =
         sst = SearchState (depth - 1) (turnsRemaining - 1) (opponent player) (negateRank bt) (negateRank al)
         (negateRank -> r, tt') = rank hc (makeMove m bd) (moveHash hc bd m h) tt sst
 
-bestMove :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => b -> Player -> Int -> Int -> Eff effs MoveRecord
-bestMove b p t d = fmap (fst . maximumBy (compare `on` snd)) $ runChoices $ do
-  m@(MoveRecord e m') <- choose $ moves p b
-  st@AgentState{..} :: AgentState p b <- get
-  let (r, tt') = rank (hashCache ttable) (makeMove m' b) (boardHash (hashCache ttable) b) ttable $ SearchState d t (opponent p) NegativeInfinity PositiveInfinity
-  modify @(AgentState p b) $ \s -> s { ttable = tt' }
-  return (m, negateRank r)
+bestMove :: Board b => TTable -> b -> Player -> Int -> Int -> (MoveRecord, TTable)
+bestMove tt b p t d = fst $ maximumByRank snd $ do
+  m@(MoveRecord e m') <- moves p b
+  let (negateRank -> r, tt') = rank (hashCache tt) (makeMove m' b) (boardHash (hashCache tt) b) tt $ SearchState d t (opponent p) NegativeInfinity PositiveInfinity
+  return ((m, tt'), r)
 
 negamaxAct :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => PlayerSing p -> Eff effs TurnOutcome
 negamaxAct p = do
@@ -91,9 +89,8 @@ negamaxAct p = do
     case moves (playerSing p) board of
       [] -> return Lose
       ms -> do
-        -- todo: is this off by one? even-odd thing?
-        MoveRecord e m <- bestMove @b @p board (playerSing p) turnsLeft 7
-        put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board }
+        (MoveRecord e m, tt') <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove ttable board (playerSing p) turnsLeft
+        put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board, ttable = tt' }
         return $ case e of
           Capture King -> Win m
           _ -> Move m

@@ -87,6 +87,14 @@ negateRank (Rank x) = Rank $ negate x
 negateRank NegativeInfinity = PositiveInfinity
 negateRank PositiveInfinity = NegativeInfinity
 
+-- short-circuiting
+maximumByRank :: (a -> Rank) -> [a] -> a
+maximumByRank f [] = error "maximum of empty list"
+maximumByRank f [x] = x
+maximumByRank f (x:y:xs) = case f x of
+  PositiveInfinity -> x
+  _ -> maximumByRank f $ if f x > f y then (x:xs) else (y:xs)
+
 readPlayer :: Char -> Maybe Player
 readPlayer 'W' = Just White
 readPlayer 'B' = Just Black
