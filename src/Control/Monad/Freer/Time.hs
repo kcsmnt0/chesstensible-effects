@@ -35,7 +35,7 @@ timeoutFixAfter t f x = do t' <- after t; timeoutFixAt t' f x
 timeoutIterateMapLastAt :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> Eff effs a) -> Eff effs a
 timeoutIterateMapLastAt t f x g = go x
   where
-    go x = traceShow x $ timeout t (g (f x)) >>= \case
+    go x = timeout t (g (f x)) >>= \case
       Nothing -> g x
       Just x' -> go (f x)
 
