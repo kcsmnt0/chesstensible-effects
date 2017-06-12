@@ -1,6 +1,7 @@
 -- todo: organization
 module Chess where
 
+import Control.Monad
 import Control.Monad.Freer
 import Control.Monad.Loops
 import Data.Char
@@ -40,7 +41,7 @@ data MoveResult = Capture Shape | Migrate deriving (Show, Eq)
 
 data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Show, Eq)
 
-data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq) -- todo! Tie needs a last move too
+data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq) -- todo: Tie needs a last move too
 
 data GameOutcome = Victor Player | Draw deriving (Show, Eq)
 
@@ -229,7 +230,7 @@ moveResult c Whatever Nothing = Just Migrate
 moveResult c Whatever (Just (Piece c' s)) | (c' == opponent c) = Just $ Capture s
 moveResult _ _ _ = Nothing
 
--- All of the legal moves for a piece at a given index (assumed without verification to be there).
+-- All of the legal moves for a piece at a given index (without checking that it's actually there).
 pieceMoves :: Board b => b -> Index -> Piece -> [MoveRecord]
 pieceMoves b i p = do
   PotentialMove m t <- mask p
@@ -238,7 +239,7 @@ pieceMoves b i p = do
   return $ MoveRecord e (i, i')
 
 -- All the legal moves that the player can make.
-moves :: Board b => Player -> b -> [MoveRecord] -- todo: promote
+moves :: Board b => Player -> b -> [MoveRecord]
 moves p b = [m | (i,s) <- pieces p b, m <- pieceMoves b i (Piece p s)]
 
 lost :: Board b => Player -> b -> Bool
@@ -261,7 +262,13 @@ maybeMove b (i, j) = do
   p <- b!i
   let p' = b!j
   -- todo: this is definitely more complicated than it needs to be
-  listToMaybe [m | m@(MoveRecord e (i, j')) <- pieceMoves b i p, j == j', case e of Migrate -> isNothing p'; Capture _ -> isJust p']
+  listToMaybe $ do
+    m@(MoveRecord e (i,j')) <- pieceMoves b i p
+    guard (j == j')
+    guard $ case e of
+      Migrate -> isNothing p'
+      Capture _ -> isJust p'
+    return m
 
 -- The board position at the start of the game.
 initialBoard :: Board b => b
@@ -274,6 +281,7 @@ initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6)
 -- Play one white turn and one black turn, relaying the actions between the two agents. The constraint on the effects
 -- in scope is the union of the two agent constraints, so this essentially interlaves the two effectful coroutines
 -- that the agents represent into one effectful computation.
+-- Agents maintain all of their own state and are on the honor system to report game outcomes correctly.
 tradeTurns :: (Members es effs, Members es' effs) => Agent es -> Agent es' -> Eff effs (Maybe GameOutcome)
 tradeTurns w b = do
   act w >>= \case

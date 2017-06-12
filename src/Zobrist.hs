@@ -36,6 +36,7 @@ initialZobrist size = do
 boardHash :: Board b => HashCache -> b -> Hash
 boardHash hc b = foldr xor 0 $ map (hc Map.!) $ assocs b
 
+-- update a hash with the result of a move
 moveHash :: Board b => HashCache -> b -> Move -> Hash -> Hash
 moveHash hc b (i,j) = foldr1 (.) $ map (xor . (hc Map.!)) [(i, b!i), (i, Nothing), (j, b!j), (j, b!i)]
 
@@ -44,21 +45,16 @@ lookup k z@Zobrist{..} = Map.lookup k table
 
 insertKey :: Ord k => Key k -> Rank -> Zobrist k -> Zobrist k
 insertKey k r z@Zobrist{..} =
-  case Map.lookup k table of
-    Nothing -> Zobrist hashCache size $ Map.insert k r $
-      if Map.size table >= size then
-        -- since the hashes are random, deleting the key with the minimum hash is the same as deleting a random key
-        -- todo: ...right?
-        Map.deleteMin table
-      else
-        table
-
-    Just r'
-      | r == r' -> z
-      | otherwise -> error "hash collision"
+  if Map.member k table then -- maintain the size constraint
+    z
+  else
+    -- since the hashes are random, deleting the key with the minimum hash is the same as deleting a random key
+    -- todo: ...right?
+    z { table = Map.insert k r $ if Map.size table >= size then Map.deleteMin table else table }
 
 insertBoard :: (Ord k, Board b) => k -> b -> Rank -> Zobrist k -> Zobrist k
 insertBoard k b r z@Zobrist{..} = insertKey (Key k (boardHash hashCache b)) r z
 
+-- given a hash from a previous state and a move to update it with, insert the post-move board's rank into the table
 insertMove :: (Ord k, Board b) => k -> b -> Hash -> Move -> Rank -> Zobrist k -> Zobrist k
 insertMove k b h m r z@Zobrist{..} = insertKey (Key k (moveHash hashCache b m h)) r z

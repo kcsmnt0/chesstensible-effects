@@ -15,7 +15,6 @@ import Grid.Array
 import IMCS
 import Text.Read
 
--- It's not known at compile-time which agent will play which color.
 clientAgent = Negamax.agent @ArrayBoard
 serverAgent = IMCSOpponent.agent
 
@@ -26,8 +25,8 @@ readInitiation "offer" = Just Offer
 readInitiation "accept" = Just Accept
 readInitiation _ = Nothing
 
--- Connect to the server, let the user choose a game offer to accept, and run a local game between a console agent and
--- one communicating with the IMCS server to represent the other player.
+-- Connect to the server, let the user offer or accept a game, and run a local game between a local negamax agent and
+-- an agent communicating with the IMCS server.
 runNegamaxVsIMCSOpponentIO :: IO ()
 runNegamaxVsIMCSOpponentIO = runM $ imcsOpponentRunIO_ $ do
   socketRecvLine >>= ensureResponseCode 100

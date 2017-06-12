@@ -23,6 +23,7 @@ socketRecvUntil l = send $ Recv ((l ==) . last)
 socketRecvLine :: Member Socket effs => Eff effs String
 socketRecvLine = fmap head . send $ Recv (const True)
 
+-- like Data.List.break, but splitting after the first matching element instead of on it
 breakAfter :: (a -> Bool) -> [a] -> Maybe ([a], [a])
 breakAfter p [] = Nothing
 breakAfter p (x:xs)

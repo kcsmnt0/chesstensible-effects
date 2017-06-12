@@ -19,7 +19,7 @@ import Debug.Trace
 
 -- todo: un-hardcode this (softcode?)
 maxTurns = 40
-turnTime = 7 -- leave a little buffer (0.5s/turn) for outer processing, GC, potential timing bugs (todo), etc.
+turnTime = 7.4 -- leave a little buffer for netcode and GC and stuff
 
 data SearchState = SearchState
   { depth :: Int
@@ -36,7 +36,7 @@ data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b, tta
 type AgentEffects p b = [State (AgentState p b), Console, Time]
 
 initialAgentState :: forall b p effs. (Board b, Member Rand effs) => Eff effs (AgentState p b)
-initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist 1 -- (100 * (2^20))
+initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist (100 * (2^20))
 
 compareMoveResult :: MoveResult -> MoveResult -> Ordering
 compareMoveResult (Capture King) _ = GT
@@ -90,9 +90,8 @@ negamaxAct p = do
     case moves (playerSing p) board of
       [] -> return Lose
       ms -> do
-        let eval = bestMove ttable board (playerSing p) turnsLeft
-        (MoveRecord e m, tt') <- fmap last $ timeoutTakeAfter turnTime $ map eval [1,3..]
-        -- (MoveRecord e m, tt') <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove ttable board (playerSing p) turnsLeft
+        let bestMoveAtDepth = bestMove ttable board (playerSing p) turnsLeft
+        (MoveRecord e m, tt') <- fmap last $ timeoutTakeAfter turnTime $ map bestMoveAtDepth [1,3..]
         put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board, ttable = tt' }
         return $ case e of
           Capture King -> Win m
