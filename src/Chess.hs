@@ -42,9 +42,13 @@ data MoveRecord = MoveRecord { result :: MoveResult, move :: Move } deriving (Sh
 
 data TurnOutcome = Move Move | Win Move | Tie | Lose deriving (Show, Eq) -- todo! Tie needs a last move too
 
-data GameOutcome = Won Player | Tied deriving (Show, Eq)
+data GameOutcome = Victor Player | Draw deriving (Show, Eq)
 
-data Rank = NegativeInfinity | Rank Int | PositiveInfinity deriving (Show, Eq, Ord)
+data Rank
+  = Rank Int -- board score
+  | Lost Int -- turns left
+  | Won  Int -- turns left
+  deriving (Show, Eq)
 
 -- An Agent is parameterized over a list of effects.  Each agent maintains its own state within the effectful context
 -- that it runs in, so there's no shared board state to pass around.
@@ -82,18 +86,19 @@ instance Show Piece where
   show (Piece White s) = show s
   show (Piece Black s) = map toLower $ show s
 
+instance Ord Rank where
+  compare (Rank x) (Rank y) = compare x y
+  compare (Rank _) (Won _) = LT
+  compare (Rank _) (Lost _) = GT
+  compare (Won x) (Won y) = compare x y -- winning earlier (i.e. with more turns left) is better than winning later
+  compare (Won _) _ = GT
+  compare (Lost x) (Lost y) = compare (-x) (-y) -- losing later is better than losing earlier
+  compare (Lost _) _ = LT
+
 negateRank :: Rank -> Rank
 negateRank (Rank x) = Rank $ negate x
-negateRank NegativeInfinity = PositiveInfinity
-negateRank PositiveInfinity = NegativeInfinity
-
--- short-circuiting
-maximumByRank :: (a -> Rank) -> [a] -> a
-maximumByRank f [] = error "maximum of empty list"
-maximumByRank f [x] = x
-maximumByRank f (x:y:xs) = case f x of
-  PositiveInfinity -> x
-  _ -> maximumByRank f $ if f x > f y then (x:xs) else (y:xs)
+negateRank (Lost x) = (Won x)
+negateRank (Won x) = (Lost x)
 
 readPlayer :: Char -> Maybe Player
 readPlayer 'W' = Just White
@@ -156,16 +161,20 @@ opponentSing BLACK = WHITE
 pieces :: Board b => Player -> b -> [(Index, Shape)]
 pieces p b = [(i, shape x) | (i, Just x) <- assocs b, owner x == p]
 
-pieceScore :: Shape -> Int
-pieceScore Pawn = 1
-pieceScore Bishop = 3
-pieceScore Knight = 3
-pieceScore Rook = 5
-pieceScore Queen = 9
-pieceScore King = 0
+pieceValue :: Shape -> Int
+pieceValue Pawn = 10
+pieceValue Bishop = 30
+pieceValue Knight = 30
+pieceValue Rook = 50
+pieceValue Queen = 90
+pieceValue King = 0
+
+pieceScore :: Index -> Piece -> Int
+pieceScore (x,y) (Piece p Pawn) = pieceValue Pawn + case p of White -> 5-y; Black -> y -- prioritize pawn advancement
+pieceScore _ (Piece _ s) = pieceValue s
 
 boardScore :: Board b => Player -> b -> Int
-boardScore p b = sum [(if p == p' then 1 else -1) * pieceScore s | (i, Just (Piece p' s)) <- assocs b]
+boardScore p b = sum [(if p == p' then 1 else -1) * pieceScore i pc | (i, Just pc@(Piece p' s)) <- assocs b]
 
 shift :: Index -> Index -> Index
 shift (x,y) (x',y') = (x+x',y+y')
@@ -268,13 +277,13 @@ initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6)
 tradeTurns :: (Members es effs, Members es' effs) => Agent es -> Agent es' -> Eff effs (Maybe GameOutcome)
 tradeTurns w b = do
   act w >>= \case
-    Tie -> return $ Just Tied
-    Lose -> return $ Just $ Won Black
-    Win m' -> observe b m' >> return (Just (Won White))
+    Tie -> return $ Just Draw
+    Lose -> return $ Just $ Victor Black
+    Win m' -> observe b m' >> return (Just (Victor White))
     Move m' -> observe b m' >> act b >>= \case
-      Tie -> return $ Just Tied
-      Lose -> return $ Just (Won White)
-      Win m''' -> observe w m''' >> return (Just (Won Black))
+      Tie -> return $ Just Draw
+      Lose -> return $ Just (Victor White)
+      Win m''' -> observe w m''' >> return (Just (Victor Black))
       Move m''' -> observe w m''' >> return Nothing
 
 -- Run a game to completion.

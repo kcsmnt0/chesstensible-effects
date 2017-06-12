@@ -44,7 +44,7 @@ compareMoveResult _ (Capture King) = LT
 compareMoveResult Migrate Migrate = EQ
 compareMoveResult (Capture _) Migrate = GT
 compareMoveResult Migrate (Capture _) = LT
-compareMoveResult (Capture s) (Capture t) = compare (pieceScore s) (pieceScore t)
+compareMoveResult (Capture s) (Capture t) = compare (pieceValue s) (pieceValue t)
 
 compareMoveRecord :: MoveRecord -> MoveRecord -> Ordering
 compareMoveRecord = compareMoveResult `on` result
@@ -57,11 +57,11 @@ rank hc bd h tt s@SearchState{..} =
   case Zobrist.lookup key tt of
     Just r -> (r, tt)
     Nothing
-      | lost player bd -> leaf NegativeInfinity tt
-      | won player bd -> leaf PositiveInfinity tt
+      | lost player bd -> leaf (Lost turnsRemaining) tt
+      | won player bd -> leaf (Won turnsRemaining) tt
       | turnsRemaining == 0 -> leaf (Rank 0) tt
       | depth == 0 -> leaf (Rank (boardScore player bd)) tt
-      | otherwise -> go (sortBy (flip compareMoveRecord) (moves player bd)) NegativeInfinity alpha beta tt
+      | otherwise -> go (sortBy (flip compareMoveRecord) (moves player bd)) (Lost maxTurns) alpha beta tt
   where
     key = Key s h
 
@@ -74,9 +74,10 @@ rank hc bd h tt s@SearchState{..} =
         (negateRank -> r, tt') = rank hc (makeMove m bd) (moveHash hc bd m h) tt sst
 
 bestMove :: Board b => TTable -> b -> Player -> Int -> Int -> (MoveRecord, TTable)
-bestMove tt b p t d = fst $ maximumByRank snd $ do
+bestMove tt b p t d = fst $ maximumBy (compare `on` snd) $ do
   m@(MoveRecord e m') <- moves p b
-  let (negateRank -> r, tt') = rank (hashCache tt) (makeMove m' b) (boardHash (hashCache tt) b) tt $ SearchState d t (opponent p) NegativeInfinity PositiveInfinity
+  let sst = SearchState d t (opponent p) (Lost maxTurns) (Won maxTurns)
+  let (negateRank -> r, tt') = rank (hashCache tt) (makeMove m' b) (boardHash (hashCache tt) b) tt sst
   return ((m, tt'), r)
 
 negamaxAct :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => PlayerSing p -> Eff effs TurnOutcome
