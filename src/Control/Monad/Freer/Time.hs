@@ -18,28 +18,20 @@ now = send Now
 timeout :: Member Time effs => UTCTime -> a -> Eff effs (Maybe a)
 timeout t x = send $ Timeout t x
 
+timeoutAfter :: Member Time effs => Seconds -> a -> Eff effs (Maybe a)
+timeoutAfter t x = after t >>= flip timeout x
+
 after :: Member Time effs => Seconds -> Eff effs UTCTime
 after t = addUTCTime (realToFrac t) <$> now
 
-timeoutAfter :: Member Time effs => Seconds -> a -> Eff effs (Maybe a)
-timeoutAfter t x = do t' <- after t; timeout t' x
+timeoutTakeAt :: Member Time effs => UTCTime -> [a] -> Eff effs [a]
+timeoutTakeAt t [] = return []
+timeoutTakeAt t (x:xs) = timeout t x >>= \case
+  Just x' -> (x' :) <$> timeoutTakeAt t xs
+  Nothing -> return []
 
-timeoutFixAt :: Member Time effs => UTCTime -> (a -> Eff effs a) -> a -> Eff effs a
-timeoutFixAt t f x = f x >>= timeout t >>= maybe (return x) (timeoutFixAt t f)
-
-timeoutFixAfter :: Member Time effs => Seconds -> (a -> Eff effs a) -> a -> Eff effs a
-timeoutFixAfter t f x = do t' <- after t; timeoutFixAt t' f x
-
--- todo: is there a good name/abstraction for this? (timeoutFold?)
-timeoutIterateMapLastAt :: (Show e, Member Time effs) => UTCTime -> (e -> e) -> e -> (e -> a) -> Eff effs a
-timeoutIterateMapLastAt t f x g = go x
-  where
-    go x = timeout t (g (f x)) >>= \case
-      Nothing -> return $ g x
-      Just x' -> go $ f x
-
-timeoutIterateMapLastAfter :: (Show e, Member Time effs) => Seconds -> (e -> e) -> e -> (e -> a) -> Eff effs a
-timeoutIterateMapLastAfter t f x g = do t' <- after t; timeoutIterateMapLastAt t' f x g
+timeoutTakeAfter :: Member Time effs => Seconds -> [a] -> Eff effs [a]
+timeoutTakeAfter t xs = after t >>= flip timeoutTakeAt xs
 
 runTimeIO :: Member IO effs => Eff (Time : effs) a -> Eff effs a
 runTimeIO = handleRelay pure $ \m k -> case m of

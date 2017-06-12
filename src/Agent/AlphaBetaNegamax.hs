@@ -19,7 +19,7 @@ import Debug.Trace
 
 -- todo: un-hardcode this (softcode?)
 maxTurns = 40
-turnTime = 5
+turnTime = 7 -- leave a little buffer (0.5s/turn) for outer processing, GC, potential timing bugs (todo), etc.
 
 data SearchState = SearchState
   { depth :: Int
@@ -36,7 +36,7 @@ data AgentState (p :: Player) b = AgentState { turnsLeft :: Int, board :: b, tta
 type AgentEffects p b = [State (AgentState p b), Console, Time]
 
 initialAgentState :: forall b p effs. (Board b, Member Rand effs) => Eff effs (AgentState p b)
-initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist (2^20)
+initialAgentState = AgentState @p @b maxTurns initialBoard <$> initialZobrist 1 -- (100 * (2^20))
 
 compareMoveResult :: MoveResult -> MoveResult -> Ordering
 compareMoveResult (Capture King) _ = GT
@@ -74,7 +74,7 @@ rank hc bd h tt s@SearchState{..} =
         (negateRank -> r, tt') = rank hc (makeMove m bd) (moveHash hc bd m h) tt sst
 
 bestMove :: Board b => TTable -> b -> Player -> Int -> Int -> (MoveRecord, TTable)
-bestMove tt b p t d = fst $ maximumBy (compare `on` snd) $ do
+bestMove tt b p t d = traceShow d $ fst $ maximumBy (compare `on` snd) $ do
   m@(MoveRecord e m') <- moves p b
   let sst = SearchState d t (opponent p) (Lost maxTurns) (Won maxTurns)
   let (negateRank -> r, tt') = rank (hashCache tt) (makeMove m' b) (boardHash (hashCache tt) b) tt sst
@@ -90,7 +90,9 @@ negamaxAct p = do
     case moves (playerSing p) board of
       [] -> return Lose
       ms -> do
-        (MoveRecord e m, tt') <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove ttable board (playerSing p) turnsLeft
+        let eval = bestMove ttable board (playerSing p) turnsLeft
+        (MoveRecord e m, tt') <- fmap last $ timeoutTakeAfter turnTime $ map eval [1,3..]
+        -- (MoveRecord e m, tt') <- timeoutIterateMapLastAfter turnTime (+ 2) 1 $ bestMove ttable board (playerSing p) turnsLeft
         put @(AgentState p b) $ st { turnsLeft = turnsLeft - 1 , board = makeMove m board, ttable = tt' }
         return $ case e of
           Capture King -> Win m
