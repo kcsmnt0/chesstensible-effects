@@ -36,7 +36,7 @@ initialZobrist size = do
 boardHash :: Board b => HashCache -> b -> Hash
 boardHash hc b = foldr xor 0 $ map (hc Map.!) $ assocs b
 
--- update a hash with the result of a move
+-- Update a hash with the result of a move.
 moveHash :: Board b => HashCache -> b -> Move -> Hash -> Hash
 moveHash hc b (i,j) = foldr1 (.) $ map (xor . (hc Map.!)) [(i, b!i), (i, Nothing), (j, b!j), (j, b!i)]
 
@@ -55,6 +55,6 @@ insertKey k r z@Zobrist{..} =
 insertBoard :: (Ord k, Board b) => k -> b -> Rank -> Zobrist k -> Zobrist k
 insertBoard k b r z@Zobrist{..} = insertKey (Key k (boardHash hashCache b)) r z
 
--- given a hash from a previous state and a move to update it with, insert the post-move board's rank into the table
+-- Given a hash from a previous state and a move to update it with, insert the post-move board's rank into the table.
 insertMove :: (Ord k, Board b) => k -> b -> Hash -> Move -> Rank -> Zobrist k -> Zobrist k
 insertMove k b h m r z@Zobrist{..} = insertKey (Key k (moveHash hashCache b m h)) r z

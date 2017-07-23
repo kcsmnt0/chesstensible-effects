@@ -109,7 +109,8 @@ readPlayer _ = Nothing
 readColumn :: Char -> Maybe Int
 readColumn c = if 'a' <= c && c <= 'e' then Just (ord c - ord 'a') else Nothing
 
--- The internal board representation is mirrored across the horizontal axis, so the row indices are mirrored here.
+-- The internal board representation is mirrored vertically versus the output format, so the row indices are
+-- mirrored here.
 readRow :: Char -> Maybe Int
 readRow c = do i <- readMaybe (c:""); if 1 <= i && i <= 6 then Just (6-i) else Nothing
 
@@ -203,7 +204,7 @@ diagonals = rotations downRight
 
 at p = PotentialMove p . Offset
 
--- The union of all of the sets of potential moves that it can make.
+-- The mask of a piece is the set of all potential moves it has available.
 mask :: Piece -> [PotentialMove]
 mask (Piece Black Pawn) = [Empty `at` (0, 1), Occupied `at` (-1, 1), Occupied `at` (1, 1)]
 mask (Piece White Pawn) = [Empty `at` (0,-1), Occupied `at` (-1,-1), Occupied `at` (1,-1)]
@@ -280,7 +281,7 @@ initialBoard = foldr1 (.) [replace i (Just x) | (i,x) <- positions] (empty (5,6)
 
 -- Play one white turn and one black turn, relaying the actions between the two agents. The constraint on the effects
 -- in scope is the union of the two agent constraints, so this essentially interlaves the two effectful coroutines
--- that the agents represent into one effectful computation.
+-- that the agents represent into one.
 -- Agents maintain all of their own state and are on the honor system to report game outcomes correctly.
 tradeTurns :: (Members es effs, Members es' effs) => Agent es -> Agent es' -> Eff effs (Maybe GameOutcome)
 tradeTurns w b = do

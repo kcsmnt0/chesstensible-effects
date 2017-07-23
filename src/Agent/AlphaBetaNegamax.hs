@@ -51,7 +51,6 @@ compareMoveRecord = compareMoveResult `on` result
 
 -- this is the critical loop so it's worth avoiding Eff and writing it in pure style for the sake of speed
 -- (that's the truth, i profiled)
--- todo: this is uglier than it has to be though
 rank :: Board b => HashCache -> b -> Hash -> TTable -> SearchState -> (Rank, TTable)
 rank hc bd h tt s@SearchState{..} =
   case Zobrist.lookup key tt of
@@ -98,9 +97,7 @@ negamaxAct p = do
           _ -> Move m
 
 negamaxObserve :: forall b p effs. (Board b, Members (AgentEffects p b) effs) => PlayerSing p -> Move -> Eff effs ()
-negamaxObserve p m = do
-  st@AgentState{..} :: AgentState p b <- get
-  put @(AgentState p b) $ st { board = makeMove m board }
+negamaxObserve p m = modify @(AgentState p b) $ \st@AgentState{..} -> st { board = makeMove m board }
 
 negamaxRunIO :: forall b p a effs. (Board b, Member IO effs) => Eff (AgentEffects p b ++ effs) a -> Eff effs a
 negamaxRunIO x = runRandIO initialAgentState >>= runTimeIO . runConsoleIO . evalState x

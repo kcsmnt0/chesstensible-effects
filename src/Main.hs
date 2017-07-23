@@ -1,5 +1,5 @@
 module Main where
 
-import Script.NegamaxVsIMCSOpponent
+import Script.ConsoleVsNegamax
 
-main = runNegamaxVsIMCSOpponentIO
+main = runConsoleVsNegamaxIO

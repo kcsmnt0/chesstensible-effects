@@ -13,7 +13,7 @@ import Text.Read (readMaybe)
 -- the state type is parameterized over which player it belongs to. I don't think this is actually necessary for a
 -- console agent, since they each just store the board and they should always agree on that anyway, but this makes
 -- for a digestible example of the pattern in more complex agents that need to maintain private state in order to
--- ensure fair competition.
+-- ensure fair competition (or functional correctness).
 newtype AgentState (p :: Player) b = AgentState { agentState :: b }
 
 type AgentEffects p b = [State (AgentState p b), Console]
